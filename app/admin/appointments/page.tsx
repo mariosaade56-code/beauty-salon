@@ -101,9 +101,9 @@ export default function AppointmentsPage() {
               <tbody className="divide-y divide-gray-100">
                 {active.map((appt) => (
                   <tr key={appt.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium">
-                      {format(new Date(appt.startTime), "h:mm a")}
-                      <span className="text-gray-400 text-xs block">{appt.service.duration}min</span>
+                    <td className="px-4 py-3">
+                      <p className="font-bold text-gray-900">{format(new Date(appt.startTime), "h:mm a")}</p>
+                      <span className="text-gray-500 text-xs">{appt.service.duration}min</span>
                     </td>
                     <td className="px-4 py-3">
                       <p className="font-medium text-gray-900">{appt.client.name}</p>
@@ -112,8 +112,8 @@ export default function AppointmentsPage() {
                       </p>
                     </td>
                     <td className="px-4 py-3">
-                      <p>{appt.service.name}</p>
-                      {appt.service.price && <p className="text-gray-400">${appt.service.price}</p>}
+                      <p className="font-medium text-gray-900">{appt.service.name}</p>
+                      {appt.service.price && <p className="text-gray-500 text-xs">${appt.service.price}</p>}
                     </td>
                     <td className="px-4 py-3">
                       {appt.staff ? (
