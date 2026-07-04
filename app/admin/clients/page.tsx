@@ -44,18 +44,16 @@ export default function ClientsPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Clients</h1>
-        <div className="flex gap-2">
-          <label className="cursor-pointer">
-            <input type="file" accept=".csv" className="hidden" onChange={handleImport} />
-            <Button variant="outline" disabled={importing} onClick={() => {}}>
-              <Upload className="w-4 h-4 mr-2" />
-              {importing ? "Importing..." : "Import CSV"}
-            </Button>
-          </label>
-        </div>
+        <h1 className="text-xl md:text-2xl font-bold text-gray-900">Clients</h1>
+        <label className="cursor-pointer">
+          <input type="file" accept=".csv" className="hidden" onChange={handleImport} />
+          <Button variant="outline" size="sm" disabled={importing} onClick={() => {}}>
+            <Upload className="w-4 h-4 mr-1" />
+            {importing ? "Importing..." : "Import CSV"}
+          </Button>
+        </label>
       </div>
 
       <div className="relative">
@@ -68,7 +66,29 @@ export default function ClientsPage() {
         />
       </div>
 
-      <Card>
+      {/* Mobile cards */}
+      <div className="md:hidden space-y-3">
+        {clients.map((c) => (
+          <Card key={c.id}>
+            <CardContent className="p-4">
+              <p className="font-semibold text-gray-900">{c.name}</p>
+              <p className="text-sm text-gray-500 flex items-center gap-1 mt-1"><Phone className="w-3 h-3" />{c.phone}</p>
+              {c.email && <p className="text-sm text-gray-500 flex items-center gap-1"><Mail className="w-3 h-3" />{c.email}</p>}
+              <div className="flex justify-between mt-2 text-xs text-gray-400">
+                <span>{c._count.appointments} visit{c._count.appointments !== 1 ? "s" : ""}</span>
+                <span>Since {format(new Date(c.createdAt), "MMM yyyy")}</span>
+              </div>
+              {c.appointments[0] && (
+                <p className="text-xs text-gray-400 mt-1">Last: {c.appointments[0].service.name} · {format(new Date(c.appointments[0].startTime), "MMM d, yyyy")}</p>
+              )}
+            </CardContent>
+          </Card>
+        ))}
+        {clients.length === 0 && <p className="text-center text-gray-400 py-10">No clients found</p>}
+      </div>
+
+      {/* Desktop table */}
+      <Card className="hidden md:block">
         <CardContent className="p-0">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">

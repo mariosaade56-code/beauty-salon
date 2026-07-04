@@ -21,9 +21,9 @@ export default function HomePage() {
             </div>
             <span className="font-bold text-gray-900 text-lg">Beauty Salon</span>
           </div>
-          <div className="flex items-center gap-6">
-            <a href="#services" className="text-sm text-gray-600 hover:text-pink-600 transition-colors">Services</a>
-            <a href="#contact" className="text-sm text-gray-600 hover:text-pink-600 transition-colors">Contact</a>
+          <div className="flex items-center gap-4 md:gap-6">
+            <a href="#services" className="hidden md:block text-sm text-gray-600 hover:text-pink-600 transition-colors">Services</a>
+            <a href="#contact" className="hidden md:block text-sm text-gray-600 hover:text-pink-600 transition-colors">Contact</a>
             <Link href="/book" className="bg-pink-600 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-pink-700 transition-colors">
               Book Now
             </Link>
@@ -37,7 +37,7 @@ export default function HomePage() {
           <div className="inline-flex items-center gap-2 bg-pink-100 text-pink-700 px-4 py-1.5 rounded-full text-sm font-medium mb-6">
             <Star className="w-4 h-4" /> Premium Beauty Services
           </div>
-          <h1 className="text-5xl md:text-6xl font-bold text-gray-900 leading-tight mb-6">
+          <h1 className="text-4xl md:text-6xl font-bold text-gray-900 leading-tight mb-6">
             Your Beauty,<br />
             <span className="text-pink-600">Our Passion</span>
           </h1>

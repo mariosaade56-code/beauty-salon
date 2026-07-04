@@ -39,9 +39,9 @@ export default function ReportsPage() {
     : [];
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Reports</h1>
+        <h1 className="text-xl md:text-2xl font-bold text-gray-900">Reports</h1>
         <div className="flex gap-2">
           {(["day", "week", "month"] as const).map((p) => (
             <Button key={p} variant={period === p ? "default" : "outline"} size="sm" onClick={() => setPeriod(p)}>

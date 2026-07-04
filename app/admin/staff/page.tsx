@@ -51,11 +51,11 @@ export default function StaffPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Staff</h1>
-        <Button onClick={() => setShowForm(true)}>
-          <Plus className="w-4 h-4 mr-2" /> Add Staff
+        <h1 className="text-xl md:text-2xl font-bold text-gray-900">Staff</h1>
+        <Button size="sm" onClick={() => setShowForm(true)}>
+          <Plus className="w-4 h-4 mr-1" /> Add Staff
         </Button>
       </div>
 
@@ -69,7 +69,7 @@ export default function StaffPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={create} className="space-y-4">
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
                   <Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />

@@ -49,18 +49,18 @@ export default function DashboardPage() {
   const confirmed = todayAppts.filter((a) => a.status !== "CANCELLED");
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <h1 className="text-xl md:text-2xl font-bold text-gray-900">Dashboard</h1>
         <p className="text-gray-500 text-sm mt-1">{format(today, "EEEE, MMMM d, yyyy")}</p>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <StatCard icon={Calendar} label="Today's Appointments" value={confirmed.length} color="pink" />
-        <StatCard icon={Clock} label="Pending Today" value={todayAppts.filter((a) => a.status === "PENDING").length} color="yellow" />
-        <StatCard icon={TrendingUp} label="Month Completed" value={stats?.completed || 0} color="green" />
-        <StatCard icon={DollarSign} label="Month Revenue" value={`$${(stats?.totalRevenue || 0).toFixed(0)}`} color="purple" />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+        <StatCard icon={Calendar} label="Today" value={confirmed.length} color="pink" />
+        <StatCard icon={Clock} label="Pending" value={todayAppts.filter((a) => a.status === "PENDING").length} color="yellow" />
+        <StatCard icon={TrendingUp} label="Completed" value={stats?.completed || 0} color="green" />
+        <StatCard icon={DollarSign} label="Revenue" value={`$${(stats?.totalRevenue || 0).toFixed(0)}`} color="purple" />
       </div>
 
       {/* Today's Schedule */}
@@ -74,27 +74,20 @@ export default function DashboardPage() {
           ) : (
             <div className="space-y-3">
               {confirmed.map((appt) => (
-                <div key={appt.id} className="flex items-center justify-between p-4 rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors">
-                  <div className="flex items-center gap-4">
-                    <div className="text-center min-w-[60px]">
-                      <p className="font-semibold text-gray-900 text-sm">
-                        {format(new Date(appt.startTime), "h:mm")}
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        {format(new Date(appt.startTime), "a")}
-                      </p>
+                <div key={appt.id} className="flex items-center justify-between p-3 md:p-4 rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="text-center min-w-[50px]">
+                      <p className="font-semibold text-gray-900 text-sm">{format(new Date(appt.startTime), "h:mm")}</p>
+                      <p className="text-xs text-gray-400">{format(new Date(appt.startTime), "a")}</p>
                     </div>
                     <div>
-                      <p className="font-medium text-gray-900">{appt.client.name}</p>
-                      <p className="text-sm text-gray-500">{appt.service.name} · {appt.staff?.name || "Any staff"}</p>
+                      <p className="font-medium text-gray-900 text-sm">{appt.client.name}</p>
+                      <p className="text-xs text-gray-500">{appt.service.name} · {appt.staff?.name || "Any staff"}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs text-gray-400">{appt.source}</span>
-                    <Badge variant={statusColors[appt.status] || "outline"}>
-                      {appt.status}
-                    </Badge>
-                  </div>
+                  <Badge variant={statusColors[appt.status] || "outline"}>
+                    {appt.status}
+                  </Badge>
                 </div>
               ))}
             </div>

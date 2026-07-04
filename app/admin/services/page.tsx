@@ -58,11 +58,11 @@ export default function ServicesPage() {
   const grouped = CATEGORIES.map((cat) => ({ cat, items: services.filter((s) => s.category === cat) })).filter((g) => g.items.length > 0);
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Services</h1>
-        <Button onClick={() => { setShowForm(true); setEditId(null); setForm(blank); }}>
-          <Plus className="w-4 h-4 mr-2" /> Add Service
+        <h1 className="text-xl md:text-2xl font-bold text-gray-900">Services</h1>
+        <Button size="sm" onClick={() => { setShowForm(true); setEditId(null); setForm(blank); }}>
+          <Plus className="w-4 h-4 mr-1" /> Add
         </Button>
       </div>
 
@@ -75,7 +75,7 @@ export default function ServicesPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <form onSubmit={submit} className="grid grid-cols-2 gap-4">
+            <form onSubmit={submit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
                 <Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Gel Manicure" />
@@ -94,11 +94,11 @@ export default function ServicesPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Price ($)</label>
                 <Input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} placeholder="Optional" step="0.01" />
               </div>
-              <div className="col-span-2">
+              <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                 <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
               </div>
-              <div className="col-span-2">
+              <div className="md:col-span-2">
                 <Button type="submit">{editId ? "Update Service" : "Add Service"}</Button>
               </div>
             </form>
@@ -111,16 +111,13 @@ export default function ServicesPage() {
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">{cat}</h2>
           <div className="space-y-2">
             {items.map((s) => (
-              <div key={s.id} className="flex items-center justify-between bg-white border border-gray-200 rounded-xl px-4 py-3">
-                <div className="flex items-center gap-4">
-                  <div>
-                    <p className="font-medium text-gray-900">{s.name}</p>
-                    {s.description && <p className="text-sm text-gray-500">{s.description}</p>}
-                  </div>
+              <div key={s.id} className="flex items-start justify-between bg-white border border-gray-200 rounded-xl px-4 py-3 gap-2">
+                <div>
+                  <p className="font-medium text-gray-900">{s.name}</p>
+                  {s.description && <p className="text-sm text-gray-500">{s.description}</p>}
+                  <p className="text-xs text-gray-400 mt-0.5">{s.duration} min{s.price ? ` · $${s.price}` : ""}</p>
                 </div>
-                <div className="flex items-center gap-4">
-                  <span className="text-sm text-gray-500">{s.duration} min</span>
-                  {s.price && <span className="font-medium">${s.price}</span>}
+                <div className="flex items-center gap-2 flex-shrink-0">
                   <Badge variant={s.isActive ? "success" : "outline"}>{s.isActive ? "Active" : "Off"}</Badge>
                   <Button size="sm" variant="ghost" onClick={() => startEdit(s)}><Pencil className="w-4 h-4" /></Button>
                   <Button size="sm" variant="ghost" onClick={() => toggleActive(s)}>{s.isActive ? "Hide" : "Show"}</Button>

@@ -55,24 +55,24 @@ export default function AppointmentsPage() {
   const active = appointments.filter((a) => a.status !== "CANCELLED");
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Appointments</h1>
-          <p className="text-gray-500 text-sm mt-1">{active.length} appointment{active.length !== 1 ? "s" : ""} today</p>
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900">Appointments</h1>
+          <p className="text-gray-500 text-sm mt-1">{active.length} appointment{active.length !== 1 ? "s" : ""}</p>
         </div>
-        <Button onClick={() => setShowNew(true)}>
-          <Plus className="w-4 h-4 mr-2" /> New Appointment
+        <Button onClick={() => setShowNew(true)} size="sm">
+          <Plus className="w-4 h-4 mr-1" /> New
         </Button>
       </div>
 
       {/* Date navigation */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
         <Button variant="outline" size="sm" onClick={() => setDate(subDays(date, 1))}>
           <ChevronLeft className="w-4 h-4" />
         </Button>
-        <div className="font-semibold text-gray-900 min-w-[200px] text-center">
-          {format(date, "EEEE, MMMM d, yyyy")}
+        <div className="font-semibold text-gray-900 flex-1 text-center text-sm md:text-base">
+          {format(date, "EEE, MMM d, yyyy")}
         </div>
         <Button variant="outline" size="sm" onClick={() => setDate(addDays(date, 1))}>
           <ChevronRight className="w-4 h-4" />
@@ -80,77 +80,102 @@ export default function AppointmentsPage() {
         <Button variant="ghost" size="sm" onClick={() => setDate(new Date())}>Today</Button>
       </div>
 
-      {/* Appointment list */}
-      <Card>
-        <CardContent className="p-0">
-          {active.length === 0 ? (
-            <p className="text-center text-gray-400 py-16">No appointments for this day</p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Time</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Client</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Service</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Staff</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Source</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Status</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {active.map((appt) => (
-                  <tr key={appt.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3">
+      {/* Mobile: card list / Desktop: table */}
+      {active.length === 0 ? (
+        <Card><CardContent><p className="text-center text-gray-400 py-16">No appointments for this day</p></CardContent></Card>
+      ) : (
+        <>
+          {/* Mobile cards */}
+          <div className="md:hidden space-y-3">
+            {active.map((appt) => (
+              <Card key={appt.id}>
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
                       <p className="font-bold text-gray-900">{format(new Date(appt.startTime), "h:mm a")}</p>
-                      <span className="text-gray-500 text-xs">{appt.service.duration}min</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-gray-900">{appt.client.name}</p>
-                      <p className="text-gray-500 flex items-center gap-1">
-                        <Phone className="w-3 h-3" /> {appt.client.phone}
-                      </p>
-                    </td>
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-gray-900">{appt.service.name}</p>
-                      {appt.service.price && <p className="text-gray-500 text-xs">${appt.service.price}</p>}
-                    </td>
-                    <td className="px-4 py-3">
-                      {appt.staff ? (
-                        <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: appt.staff.color }} />
-                          <span className="font-medium text-gray-900">{appt.staff.name}</span>
-                        </div>
-                      ) : <span className="text-gray-400">Any</span>}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge variant="outline">{appt.source}</Badge>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge variant={statusColors[appt.status] || "outline"}>{appt.status}</Badge>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        {appt.status === "CONFIRMED" && (
-                          <Button size="sm" variant="secondary" onClick={() => updateStatus(appt.id, "COMPLETED")}>
-                            Done
-                          </Button>
-                        )}
-                        {appt.status === "CONFIRMED" && (
-                          <Button size="sm" variant="secondary" onClick={() => updateStatus(appt.id, "NO_SHOW")}>
-                            No-show
-                          </Button>
-                        )}
-                        <Button size="sm" variant="destructive" onClick={() => cancel(appt.id)}>Cancel</Button>
-                      </div>
-                    </td>
+                      <p className="text-xs text-gray-500">{appt.service.duration}min</p>
+                    </div>
+                    <Badge variant={statusColors[appt.status] || "outline"}>{appt.status}</Badge>
+                  </div>
+                  <p className="font-semibold text-gray-900">{appt.client.name}</p>
+                  <p className="text-sm text-gray-500 flex items-center gap-1"><Phone className="w-3 h-3" />{appt.client.phone}</p>
+                  <p className="text-sm text-gray-700 mt-1">{appt.service.name}</p>
+                  {appt.staff && (
+                    <div className="flex items-center gap-1 mt-1">
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: appt.staff.color }} />
+                      <span className="text-sm text-gray-700">{appt.staff.name}</span>
+                    </div>
+                  )}
+                  <div className="flex gap-2 mt-3">
+                    {appt.status === "CONFIRMED" && (
+                      <Button size="sm" variant="secondary" className="flex-1" onClick={() => updateStatus(appt.id, "COMPLETED")}>Done</Button>
+                    )}
+                    {appt.status === "CONFIRMED" && (
+                      <Button size="sm" variant="secondary" className="flex-1" onClick={() => updateStatus(appt.id, "NO_SHOW")}>No-show</Button>
+                    )}
+                    <Button size="sm" variant="destructive" className="flex-1" onClick={() => cancel(appt.id)}>Cancel</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Desktop table */}
+          <Card className="hidden md:block">
+            <CardContent className="p-0">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-medium text-gray-500">Time</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-500">Client</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-500">Service</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-500">Staff</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-500">Source</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-500">Status</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-500">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </CardContent>
-      </Card>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {active.map((appt) => (
+                    <tr key={appt.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3">
+                        <p className="font-bold text-gray-900">{format(new Date(appt.startTime), "h:mm a")}</p>
+                        <span className="text-gray-500 text-xs">{appt.service.duration}min</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-gray-900">{appt.client.name}</p>
+                        <p className="text-gray-500 flex items-center gap-1"><Phone className="w-3 h-3" /> {appt.client.phone}</p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-gray-900">{appt.service.name}</p>
+                        {appt.service.price && <p className="text-gray-500 text-xs">${appt.service.price}</p>}
+                      </td>
+                      <td className="px-4 py-3">
+                        {appt.staff ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: appt.staff.color }} />
+                            <span className="font-medium text-gray-900">{appt.staff.name}</span>
+                          </div>
+                        ) : <span className="text-gray-400">Any</span>}
+                      </td>
+                      <td className="px-4 py-3"><Badge variant="outline">{appt.source}</Badge></td>
+                      <td className="px-4 py-3"><Badge variant={statusColors[appt.status] || "outline"}>{appt.status}</Badge></td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          {appt.status === "CONFIRMED" && <Button size="sm" variant="secondary" onClick={() => updateStatus(appt.id, "COMPLETED")}>Done</Button>}
+                          {appt.status === "CONFIRMED" && <Button size="sm" variant="secondary" onClick={() => updateStatus(appt.id, "NO_SHOW")}>No-show</Button>}
+                          <Button size="sm" variant="destructive" onClick={() => cancel(appt.id)}>Cancel</Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+        </>
+      )}
+
 
       {showNew && <NewAppointmentModal onClose={() => setShowNew(false)} onCreated={() => { setShowNew(false); load(date); }} />}
     </div>
