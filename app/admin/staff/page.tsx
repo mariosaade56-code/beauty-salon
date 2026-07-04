@@ -1,0 +1,134 @@
+"use client";
+import { useEffect, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Plus, X, UserCircle } from "lucide-react";
+
+interface Staff {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  color: string;
+  isActive: boolean;
+}
+
+const COLORS = ["#ec4899", "#8b5cf6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#6366f1", "#84cc16"];
+
+export default function StaffPage() {
+  const [staff, setStaff] = useState<Staff[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ name: "", email: "", phone: "", color: COLORS[0] });
+
+  async function load() {
+    const data = await fetch("/api/staff").then((r) => r.json());
+    setStaff(data);
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function create(e: React.FormEvent) {
+    e.preventDefault();
+    await fetch("/api/staff", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form),
+    });
+    setForm({ name: "", email: "", phone: "", color: COLORS[0] });
+    setShowForm(false);
+    load();
+  }
+
+  async function toggle(id: string, isActive: boolean) {
+    await fetch(`/api/staff/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isActive: !isActive }),
+    });
+    load();
+  }
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-900">Staff</h1>
+        <Button onClick={() => setShowForm(true)}>
+          <Plus className="w-4 h-4 mr-2" /> Add Staff
+        </Button>
+      </div>
+
+      {showForm && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>New Staff Member</CardTitle>
+              <button onClick={() => setShowForm(false)}><X className="w-5 h-5 text-gray-400" /></button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={create} className="space-y-4">
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                  <Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                  <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                  <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Calendar Color</label>
+                <div className="flex gap-2">
+                  {COLORS.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setForm({ ...form, color: c })}
+                      className={`w-8 h-8 rounded-full transition-transform ${form.color === c ? "scale-125 ring-2 ring-offset-2 ring-gray-400" : ""}`}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                </div>
+              </div>
+              <Button type="submit">Add Staff Member</Button>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {staff.map((s) => (
+          <Card key={s.id}>
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg" style={{ backgroundColor: s.color }}>
+                  {s.name[0]}
+                </div>
+                <div className="flex-1">
+                  <p className="font-semibold text-gray-900">{s.name}</p>
+                  {s.email && <p className="text-sm text-gray-500">{s.email}</p>}
+                  {s.phone && <p className="text-sm text-gray-500">{s.phone}</p>}
+                </div>
+                <Badge variant={s.isActive ? "success" : "outline"}>
+                  {s.isActive ? "Active" : "Inactive"}
+                </Badge>
+              </div>
+              <div className="mt-4 flex gap-2">
+                <Button variant="outline" size="sm" className="flex-1" onClick={() => toggle(s.id, s.isActive)}>
+                  {s.isActive ? "Deactivate" : "Activate"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}

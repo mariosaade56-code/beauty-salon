@@ -1,0 +1,157 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Auth ────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String    @id @default(cuid())
+  name         String?
+  email        String    @unique
+  passwordHash String?
+  role         Role      @default(STAFF)
+  staffProfile Staff?
+  sessions     Session[]
+  createdAt    DateTime  @default(now())
+}
+
+enum Role {
+  ADMIN
+  STAFF
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique @default(cuid())
+  expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── Staff ───────────────────────────────────────────────────────────────────
+
+model Staff {
+  id           String        @id @default(cuid())
+  userId       String?       @unique
+  user         User?         @relation(fields: [userId], references: [id])
+  name         String
+  email        String?
+  phone        String?
+  avatar       String?
+  color        String        @default("#6366f1")
+  isActive     Boolean       @default(true)
+  appointments Appointment[]
+  breaks       Break[]
+  daysOff      DayOff[]
+  createdAt    DateTime      @default(now())
+}
+
+// ─── Services ────────────────────────────────────────────────────────────────
+
+model Service {
+  id           String        @id @default(cuid())
+  name         String
+  nameAr       String?
+  category     String
+  duration     Int
+  price        Float?
+  description  String?
+  isActive     Boolean       @default(true)
+  appointments Appointment[]
+  createdAt    DateTime      @default(now())
+}
+
+// ─── Clients ─────────────────────────────────────────────────────────────────
+
+model Client {
+  id           String        @id @default(cuid())
+  name         String
+  phone        String        @unique
+  email        String?
+  notes        String?
+  appointments Appointment[]
+  createdAt    DateTime      @default(now())
+}
+
+// ─── Appointments ─────────────────────────────────────────────────────────────
+
+model Appointment {
+  id              String            @id @default(cuid())
+  clientId        String
+  client          Client            @relation(fields: [clientId], references: [id])
+  staffId         String?
+  staff           Staff?            @relation(fields: [staffId], references: [id])
+  serviceId       String
+  service         Service           @relation(fields: [serviceId], references: [id])
+  startTime       DateTime
+  endTime         DateTime
+  status          AppointmentStatus @default(PENDING)
+  source          BookingSource     @default(WEBSITE)
+  notes           String?
+  googleEventId   String?
+  reminderSent24h Boolean           @default(false)
+  reminderSent1h  Boolean           @default(false)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  NO_SHOW
+  COMPLETED
+}
+
+enum BookingSource {
+  WEBSITE
+  WHATSAPP
+  WALKIN
+  MANUAL
+}
+
+// ─── Breaks & Closures ───────────────────────────────────────────────────────
+
+model Break {
+  id        String   @id @default(cuid())
+  staffId   String
+  staff     Staff    @relation(fields: [staffId], references: [id])
+  startTime DateTime
+  endTime   DateTime
+  label     String?
+  dayOfWeek Int?
+  createdAt DateTime @default(now())
+}
+
+model DayOff {
+  id       String   @id @default(cuid())
+  staffId  String?
+  staff    Staff?   @relation(fields: [staffId], references: [id])
+  date     DateTime @db.Date
+  reason   String?
+  allStaff Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+// ─── Settings ─────────────────────────────────────────────────────────────────
+
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+// ─── WhatsApp session state ───────────────────────────────────────────────────
+
+model WhatsappSession {
+  id        String   @id @default(cuid())
+  phone     String   @unique
+  state     String   @default("idle")
+  data      Json     @default("{}")
+  updatedAt DateTime @updatedAt
+}
