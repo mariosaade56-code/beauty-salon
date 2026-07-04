@@ -119,7 +119,7 @@ export default function AppointmentsPage() {
                       {appt.staff ? (
                         <div className="flex items-center gap-2">
                           <div className="w-2 h-2 rounded-full" style={{ backgroundColor: appt.staff.color }} />
-                          {appt.staff.name}
+                          <span className="font-medium text-gray-900">{appt.staff.name}</span>
                         </div>
                       ) : <span className="text-gray-400">Any</span>}
                     </td>
