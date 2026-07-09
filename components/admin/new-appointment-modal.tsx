@@ -13,6 +13,7 @@ interface Props {
 
 export default function NewAppointmentModal({ onClose, onCreated }: Props) {
   const [services, setServices] = useState<{ id: string; name: string; duration: number }[]>([]);
+  const [packages, setPackages] = useState<{ id: string; name: string; serviceId: string; sessionCount: number; isActive: boolean }[]>([]);
   const [staff, setStaff] = useState<{ id: string; name: string }[]>([]);
   const [slots, setSlots] = useState<{ time: string; staffId: string; staffName: string }[]>([]);
   const [form, setForm] = useState({
@@ -21,18 +22,24 @@ export default function NewAppointmentModal({ onClose, onCreated }: Props) {
   });
   const [loading, setLoading] = useState(false);
 
+  // "pkg:<id>" means a package was selected; availability uses its underlying service
+  const isPackage = form.serviceId.startsWith("pkg:");
+  const selectedPackage = isPackage ? packages.find((p) => p.id === form.serviceId.slice(4)) : null;
+  const effectiveServiceId = isPackage ? selectedPackage?.serviceId || "" : form.serviceId;
+
   useEffect(() => {
     fetch("/api/services").then((r) => r.json()).then(setServices);
+    fetch("/api/packages").then((r) => r.json()).then((d) => setPackages(Array.isArray(d) ? d.filter((p) => p.isActive) : []));
     fetch("/api/staff").then((r) => r.json()).then(setStaff);
   }, []);
 
   useEffect(() => {
-    if (form.serviceId && form.date) {
-      const params = new URLSearchParams({ serviceId: form.serviceId, date: form.date });
+    if (effectiveServiceId && form.date) {
+      const params = new URLSearchParams({ serviceId: effectiveServiceId, date: form.date });
       if (form.staffId) params.set("staffId", form.staffId);
       fetch(`/api/availability?${params}`).then((r) => r.json()).then(setSlots);
     }
-  }, [form.serviceId, form.date, form.staffId]);
+  }, [effectiveServiceId, form.date, form.staffId]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -46,7 +53,8 @@ export default function NewAppointmentModal({ onClose, onCreated }: Props) {
         clientName: form.clientName,
         phone: form.phone,
         email: form.email,
-        serviceId: form.serviceId,
+        serviceId: effectiveServiceId,
+        packageId: selectedPackage?.id || null,
         staffId: slot?.staffId || form.staffId || null,
         startTime: `${form.date}T${form.time}:00`,
         notes: form.notes,
@@ -82,10 +90,20 @@ export default function NewAppointmentModal({ onClose, onCreated }: Props) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Service *</label>
-              <Select required value={form.serviceId} onChange={(e) => setForm({ ...form, serviceId: e.target.value })}>
+              <Select required value={form.serviceId} onChange={(e) => setForm({ ...form, serviceId: e.target.value, time: "" })}>
                 <option value="">Select service</option>
-                {services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                <optgroup label="Services">
+                  {services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </optgroup>
+                {packages.length > 0 && (
+                  <optgroup label="Packages">
+                    {packages.map((p) => <option key={p.id} value={`pkg:${p.id}`}>📦 {p.name} ({p.sessionCount} sessions)</option>)}
+                  </optgroup>
+                )}
               </Select>
+              {isPackage && (
+                <p className="text-xs text-pink-600 mt-1">A session will be deducted from the client&apos;s package</p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Staff (optional)</label>

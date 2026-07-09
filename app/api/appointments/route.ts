@@ -38,7 +38,13 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { clientName, phone, email, serviceId, staffId, startTime, notes, source } = body;
+  const { clientName, phone, email, staffId, startTime, notes, source, packageId } = body;
+  let { serviceId } = body;
+
+  // If booking against a package, the service comes from the package
+  const pkg = packageId ? await prisma.package.findUnique({ where: { id: packageId } }) : null;
+  if (packageId && !pkg) return NextResponse.json({ error: "Package not found" }, { status: 400 });
+  if (pkg) serviceId = pkg.serviceId;
 
   const service = await prisma.service.findUnique({ where: { id: serviceId } });
   if (!service) return NextResponse.json({ error: "Service not found" }, { status: 400 });
@@ -52,6 +58,33 @@ export async function POST(req: NextRequest) {
     client = await prisma.client.create({ data: { name: clientName, phone, email } });
   }
 
+  // Find the client's package with remaining sessions, or auto-assign a new one
+  let clientPackageId: string | null = null;
+  if (pkg) {
+    const existing = await prisma.clientPackage.findMany({
+      where: {
+        clientId: client.id,
+        packageId: pkg.id,
+        OR: [{ expiresAt: null }, { expiresAt: { gte: new Date() } }],
+      },
+      orderBy: { purchasedAt: "asc" },
+    });
+    const withRemaining = existing.find((cp) => cp.sessionsUsed < cp.sessionsTotal);
+    if (withRemaining) {
+      clientPackageId = withRemaining.id;
+    } else {
+      const created = await prisma.clientPackage.create({
+        data: {
+          clientId: client.id,
+          packageId: pkg.id,
+          sessionsTotal: pkg.sessionCount,
+          expiresAt: pkg.validityDays ? new Date(Date.now() + pkg.validityDays * 86400000) : null,
+        },
+      });
+      clientPackageId = created.id;
+    }
+  }
+
   const appointment = await prisma.appointment.create({
     data: {
       clientId: client.id,
@@ -62,9 +95,18 @@ export async function POST(req: NextRequest) {
       status: "CONFIRMED",
       source: source || "WEBSITE",
       notes,
+      clientPackageId,
     },
     include: { client: true, service: true, staff: true },
   });
+
+  // Deduct one session from the package
+  if (clientPackageId) {
+    await prisma.clientPackage.update({
+      where: { id: clientPackageId },
+      data: { sessionsUsed: { increment: 1 } },
+    });
+  }
 
   // Send WhatsApp confirmation
   const confirmMsg = `✅ Appointment Confirmed!\n\nHi ${client.name}! Your booking is set:\n\n💅 ${service.name}\n👤 ${appointment.staff?.name || "Any available staff"}\n📅 ${format(start, "EEEE, MMMM d, yyyy")}\n⏰ ${format(start, "h:mm a")}\n\nSee you soon! 💕`;
