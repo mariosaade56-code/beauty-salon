@@ -39,5 +39,31 @@ export async function sendReminders() {
     await prisma.appointment.update({ where: { id: appt.id }, data: { reminderSent1h: true } });
   }
 
-  return { sent24h: upcoming24.length, sent1h: upcoming1h.length };
+  // Rebooking reminders: find completed appointments where service has reminderDays set
+  // Send reminder 7 days before the due date (i.e., reminderDays - 7 days after appointment)
+  const completedWithReminder = await prisma.appointment.findMany({
+    where: {
+      status: "COMPLETED",
+      rebookReminderSent: false,
+      service: { reminderDays: { not: null } },
+    },
+    include: { client: true, service: true },
+  });
+
+  let sentRebook = 0;
+  for (const appt of completedWithReminder) {
+    if (!appt.service.reminderDays) continue;
+    const reminderDate = new Date(appt.startTime);
+    reminderDate.setDate(reminderDate.getDate() + appt.service.reminderDays - 7);
+    if (reminderDate <= now) {
+      const dueDate = new Date(appt.startTime);
+      dueDate.setDate(dueDate.getDate() + appt.service.reminderDays);
+      const msg = `Hi ${appt.client.name}! 💕\n\nIt's almost time for your next ${appt.service.name} session!\n\n📅 Your next session is recommended around ${format(dueDate, "MMMM d")}.\n\nBook now to secure your slot! ✨\nReply here or visit our website to book.`;
+      await sendWhatsAppMessage(appt.client.phone, msg);
+      await prisma.appointment.update({ where: { id: appt.id }, data: { rebookReminderSent: true } });
+      sentRebook++;
+    }
+  }
+
+  return { sent24h: upcoming24.length, sent1h: upcoming1h.length, sentRebook };
 }

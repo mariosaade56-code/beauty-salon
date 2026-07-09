@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, Calendar, Users, Scissors, BarChart3,
-  Settings, LogOut, Sparkles, UserCircle, CalendarOff
+  Settings, LogOut, Sparkles, UserCircle, CalendarOff, Package
 } from "lucide-react";
 
 const navItems = [
@@ -13,6 +13,7 @@ const navItems = [
   { href: "/admin/clients", label: "Clients", icon: Users },
   { href: "/admin/staff", label: "Staff", icon: UserCircle },
   { href: "/admin/services", label: "Services", icon: Scissors },
+  { href: "/admin/packages", label: "Packages", icon: Package },
   { href: "/admin/calendar", label: "Calendar", icon: CalendarOff },
   { href: "/admin/reports", label: "Reports", icon: BarChart3 },
   { href: "/admin/settings", label: "Settings", icon: Settings },

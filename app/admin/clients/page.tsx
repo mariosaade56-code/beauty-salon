@@ -4,7 +4,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { format } from "date-fns";
-import { Search, Upload, Phone, Mail } from "lucide-react";
+import { Search, Upload, Phone, Mail, ChevronRight } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 interface Client {
   id: string;
@@ -17,6 +18,7 @@ interface Client {
 }
 
 export default function ClientsPage() {
+  const router = useRouter();
   const [clients, setClients] = useState<Client[]>([]);
   const [search, setSearch] = useState("");
   const [importing, setImporting] = useState(false);
@@ -69,9 +71,11 @@ export default function ClientsPage() {
       {/* Mobile cards */}
       <div className="md:hidden space-y-3">
         {clients.map((c) => (
-          <Card key={c.id}>
+          <Card key={c.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => router.push(`/admin/clients/${c.id}`)}>
             <CardContent className="p-4">
+              <div className="flex items-start justify-between">
               <p className="font-semibold text-gray-900">{c.name}</p>
+              <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" /></div>
               <p className="text-sm text-gray-500 flex items-center gap-1 mt-1"><Phone className="w-3 h-3" />{c.phone}</p>
               {c.email && <p className="text-sm text-gray-500 flex items-center gap-1"><Mail className="w-3 h-3" />{c.email}</p>}
               <div className="flex justify-between mt-2 text-xs text-gray-400">
@@ -102,7 +106,7 @@ export default function ClientsPage() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {clients.map((c) => (
-                <tr key={c.id} className="hover:bg-gray-50">
+                <tr key={c.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/admin/clients/${c.id}`)}>
                   <td className="px-4 py-3 font-medium text-gray-900">{c.name}</td>
                   <td className="px-4 py-3 text-gray-500">
                     <div className="flex items-center gap-1"><Phone className="w-3 h-3" /> {c.phone}</div>

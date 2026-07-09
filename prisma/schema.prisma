@@ -62,20 +62,24 @@ model Service {
   price        Float?
   description  String?
   isActive     Boolean       @default(true)
+  reminderDays Int?
   appointments Appointment[]
+  packages     Package[]
   createdAt    DateTime      @default(now())
 }
 
 // ─── Clients ─────────────────────────────────────────────────────────────────
 
 model Client {
-  id           String        @id @default(cuid())
-  name         String
-  phone        String        @unique
-  email        String?
-  notes        String?
-  appointments Appointment[]
-  createdAt    DateTime      @default(now())
+  id              String          @id @default(cuid())
+  name            String
+  phone           String          @unique
+  email           String?
+  notes           String?
+  appointments    Appointment[]
+  clientPackages  ClientPackage[]
+  photos          ClientPhoto[]
+  createdAt       DateTime        @default(now())
 }
 
 // ─── Appointments ─────────────────────────────────────────────────────────────
@@ -92,12 +96,15 @@ model Appointment {
   endTime         DateTime
   status          AppointmentStatus @default(PENDING)
   source          BookingSource     @default(WEBSITE)
-  notes           String?
-  googleEventId   String?
-  reminderSent24h Boolean           @default(false)
-  reminderSent1h  Boolean           @default(false)
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  notes             String?
+  googleEventId     String?
+  reminderSent24h   Boolean        @default(false)
+  reminderSent1h    Boolean        @default(false)
+  rebookReminderSent Boolean       @default(false)
+  clientPackageId   String?
+  clientPackage     ClientPackage? @relation(fields: [clientPackageId], references: [id])
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
 }
 
 enum AppointmentStatus {
@@ -113,6 +120,48 @@ enum BookingSource {
   WHATSAPP
   WALKIN
   MANUAL
+}
+
+// ─── Packages ────────────────────────────────────────────────────────────────
+
+model Package {
+  id             String          @id @default(cuid())
+  name           String
+  serviceId      String
+  service        Service         @relation(fields: [serviceId], references: [id])
+  sessionCount   Int
+  price          Float
+  validityDays   Int             @default(365)
+  isActive       Boolean         @default(true)
+  clientPackages ClientPackage[]
+  createdAt      DateTime        @default(now())
+}
+
+model ClientPackage {
+  id            String      @id @default(cuid())
+  clientId      String
+  client        Client      @relation(fields: [clientId], references: [id])
+  packageId     String
+  package       Package     @relation(fields: [packageId], references: [id])
+  sessionsTotal Int
+  sessionsUsed  Int         @default(0)
+  purchasedAt   DateTime    @default(now())
+  expiresAt     DateTime?
+  notes         String?
+  appointments  Appointment[]
+}
+
+// ─── Client Photos ────────────────────────────────────────────────────────────
+
+model ClientPhoto {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  url       String
+  type      String   @default("GENERAL")
+  notes     String?
+  takenAt   DateTime @default(now())
+  createdAt DateTime @default(now())
 }
 
 // ─── Breaks & Closures ───────────────────────────────────────────────────────

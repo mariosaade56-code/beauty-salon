@@ -11,6 +11,9 @@ interface Settings {
   staff_selection_enabled?: string;
   whatsapp_ai_enabled?: string;
   cancellation_open?: string;
+  instagram_url?: string;
+  tiktok_url?: string;
+  google_reviews_url?: string;
 }
 
 function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
@@ -65,6 +68,25 @@ export default function SettingsPage() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
             <Input value={settings.salon_address || ""} onChange={(e) => set("salon_address", e.target.value)} placeholder="123 Main St" />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Social Links */}
+      <Card>
+        <CardHeader><CardTitle>Social Media & Reviews</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Instagram URL</label>
+            <Input value={settings.instagram_url || ""} onChange={(e) => set("instagram_url", e.target.value)} placeholder="https://instagram.com/yoursalon" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">TikTok URL</label>
+            <Input value={settings.tiktok_url || ""} onChange={(e) => set("tiktok_url", e.target.value)} placeholder="https://tiktok.com/@yoursalon" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Google Reviews URL</label>
+            <Input value={settings.google_reviews_url || ""} onChange={(e) => set("google_reviews_url", e.target.value)} placeholder="https://g.page/r/..." />
           </div>
         </CardContent>
       </Card>

@@ -15,11 +15,12 @@ interface Service {
   price: number | null;
   description: string | null;
   isActive: boolean;
+  reminderDays: number | null;
 }
 
 const CATEGORIES = ["mani", "pedi", "facial", "slimming", "laser", "other"];
 
-const blank = { name: "", category: "mani", duration: 60, price: "", description: "" };
+const blank = { name: "", category: "mani", duration: 60, price: "", description: "", reminderDays: "" };
 
 export default function ServicesPage() {
   const [services, setServices] = useState<Service[]>([]);
@@ -36,7 +37,7 @@ export default function ServicesPage() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    const body = { ...form, price: form.price ? parseFloat(form.price as string) : null };
+    const body = { ...form, price: form.price ? parseFloat(form.price as string) : null, reminderDays: form.reminderDays ? parseInt(form.reminderDays as string) : null };
     if (editId) {
       await fetch(`/api/services/${editId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     } else {
@@ -46,7 +47,7 @@ export default function ServicesPage() {
   }
 
   function startEdit(s: Service) {
-    setForm({ name: s.name, category: s.category, duration: s.duration, price: s.price?.toString() || "", description: s.description || "" });
+    setForm({ name: s.name, category: s.category, duration: s.duration, price: s.price?.toString() || "", description: s.description || "", reminderDays: s.reminderDays?.toString() || "" });
     setEditId(s.id); setShowForm(true);
   }
 
@@ -94,9 +95,13 @@ export default function ServicesPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Price ($)</label>
                 <Input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} placeholder="Optional" step="0.01" />
               </div>
-              <div className="md:col-span-2">
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                 <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Rebooking Reminder (days)</label>
+                <Input type="number" value={form.reminderDays} onChange={(e) => setForm({ ...form, reminderDays: e.target.value })} placeholder="e.g. 30 for laser" min={1} />
               </div>
               <div className="md:col-span-2">
                 <Button type="submit">{editId ? "Update Service" : "Add Service"}</Button>
