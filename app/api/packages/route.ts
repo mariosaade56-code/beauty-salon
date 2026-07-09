@@ -4,7 +4,13 @@ import { requireAdmin } from "@/lib/auth";
 
 export async function GET() {
   const packages = await prisma.package.findMany({
-    include: { service: { select: { name: true, category: true } } },
+    include: {
+      service: { select: { name: true, category: true } },
+      clientPackages: {
+        include: { client: { select: { id: true, name: true, phone: true } } },
+        orderBy: { purchasedAt: "desc" },
+      },
+    },
     orderBy: { createdAt: "desc" },
   });
   return NextResponse.json(packages);
