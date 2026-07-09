@@ -179,39 +179,39 @@ export default function NewAppointmentModal({ onClose, onCreated }: Props) {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Staff (optional)</label>
-              <Select value={form.staffId} onChange={(e) => setForm({ ...form, staffId: e.target.value })}>
+              <Select value={form.staffId} onChange={(e) => setForm({ ...form, staffId: e.target.value, time: "" })}>
                 <option value="">Any available</option>
                 {staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </Select>
             </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
-            <Input type="date" required value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
-          </div>
-          {slots.length > 0 && (
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Available Times *</label>
-              <div className="grid grid-cols-4 gap-2">
-                {slots.map((slot) => (
-                  <button
-                    key={slot.time}
-                    type="button"
-                    onClick={() => setForm({ ...form, time: slot.time })}
-                    className={`py-2 px-3 rounded-lg text-sm font-medium border transition-colors ${
-                      form.time === slot.time
-                        ? "bg-pink-600 text-white border-pink-600"
-                        : "border-gray-200 hover:border-pink-300"
-                    }`}
-                  >
-                    {slot.time}
-                  </button>
-                ))}
-              </div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
+              <Input type="date" required value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value, time: "" })} />
             </div>
-          )}
-          {form.serviceId && form.date && slots.length === 0 && (
-            <p className="text-sm text-red-500">No available slots for this date</p>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Time *</label>
+              <Select required value={form.time} disabled={!effectiveServiceId}
+                onChange={(e) => setForm({ ...form, time: e.target.value })}>
+                <option value="">
+                  {!effectiveServiceId ? "Select service first" : slots.length === 0 ? "No times available" : "Select time"}
+                </option>
+                {slots.map((slot) => (
+                  <option key={`${slot.time}-${slot.staffId}`} value={slot.time}>
+                    {format(new Date(`2000-01-01T${slot.time}:00`), "h:mm a")}
+                    {!form.staffId ? ` — ${slot.staffName}` : ""}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          </div>
+          {effectiveServiceId && form.date && slots.length === 0 && (
+            <p className="text-sm text-red-500">
+              {form.staffId
+                ? `${staff.find((s) => s.id === form.staffId)?.name || "This staff member"} is not available on this date — try another date or staff`
+                : "No available slots for this date"}
+            </p>
           )}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
