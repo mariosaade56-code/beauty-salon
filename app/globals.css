@@ -24,3 +24,17 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ─── Divine Skin brand palette ─────────────────────────────── */
+@theme {
+  --color-cream: #f7f2ea;
+  --color-cream-soft: #fbf8f2;
+  --color-sand: #e9dfcf;
+  --color-taupe: #a08d75;
+  --color-charcoal: #1e1b16;
+}
+
+@theme inline {
+  --font-brand: var(--font-script), cursive;
+  --font-heading: var(--font-display), serif;
+}
