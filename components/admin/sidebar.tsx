@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
@@ -7,7 +8,7 @@ import {
   Settings, LogOut, Sparkles, UserCircle, CalendarOff, Package
 } from "lucide-react";
 
-const navItems = [
+const adminNavItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/appointments", label: "Appointments", icon: Calendar },
   { href: "/admin/clients", label: "Clients", icon: Users },
@@ -19,9 +20,23 @@ const navItems = [
   { href: "/admin/settings", label: "Settings", icon: Settings },
 ];
 
+const staffNavItems = [
+  { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/admin/appointments", label: "My Schedule", icon: Calendar },
+];
+
 export default function AdminSidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const [role, setRole] = useState<string>("ADMIN");
+
+  useEffect(() => {
+    fetch("/api/auth/me").then((r) => r.json()).then((u) => {
+      if (u?.role) setRole(u.role);
+    });
+  }, []);
+
+  const navItems = role === "STAFF" ? staffNavItems : adminNavItems;
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -86,12 +101,14 @@ export default function AdminSidebar() {
             <span className="truncate w-full text-center px-0.5">{label.split(" ")[0]}</span>
           </Link>
         ))}
-        <Link href="/admin/settings"
-          className={cn("flex-1 flex flex-col items-center justify-center py-2 text-xs gap-1",
-            pathname === "/admin/settings" ? "text-pink-600" : "text-gray-400")}>
-          <Settings className="w-5 h-5" />
-          <span>More</span>
-        </Link>
+        {role !== "STAFF" && (
+          <Link href="/admin/settings"
+            className={cn("flex-1 flex flex-col items-center justify-center py-2 text-xs gap-1",
+              pathname === "/admin/settings" ? "text-pink-600" : "text-gray-400")}>
+            <Settings className="w-5 h-5" />
+            <span>More</span>
+          </Link>
+        )}
       </nav>
     </>
   );

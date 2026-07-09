@@ -33,6 +33,7 @@ const statusColors: Record<string, "default" | "success" | "warning" | "destruct
 export default function DashboardPage() {
   const [todayAppts, setTodayAppts] = useState<Appointment[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
+  const [role, setRole] = useState<string>("ADMIN");
   const today = new Date();
 
   useEffect(() => {
@@ -41,26 +42,32 @@ export default function DashboardPage() {
       .then((r) => r.json())
       .then(setTodayAppts);
 
-    fetch(`/api/reports?period=month`)
-      .then((r) => r.json())
-      .then(setStats);
+    fetch("/api/auth/me").then((r) => r.json()).then((u) => {
+      if (u?.role) setRole(u.role);
+      if (u?.role !== "STAFF") {
+        fetch(`/api/reports?period=month`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then(setStats);
+      }
+    });
   }, []);
 
   const confirmed = todayAppts.filter((a) => a.status !== "CANCELLED");
+  const isStaff = role === "STAFF";
 
   return (
     <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       <div>
-        <h1 className="text-xl md:text-2xl font-bold text-gray-900">Dashboard</h1>
+        <h1 className="text-xl md:text-2xl font-bold text-gray-900">{isStaff ? "My Day" : "Dashboard"}</h1>
         <p className="text-gray-500 text-sm mt-1">{format(today, "EEEE, MMMM d, yyyy")}</p>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+      <div className={`grid grid-cols-2 ${isStaff ? "" : "md:grid-cols-4"} gap-3 md:gap-4`}>
         <StatCard icon={Calendar} label="Today" value={confirmed.length} color="pink" />
         <StatCard icon={Clock} label="Pending" value={todayAppts.filter((a) => a.status === "PENDING").length} color="yellow" />
-        <StatCard icon={TrendingUp} label="Completed" value={stats?.completed || 0} color="green" />
-        <StatCard icon={DollarSign} label="Revenue" value={`$${(stats?.totalRevenue || 0).toFixed(0)}`} color="purple" />
+        {!isStaff && <StatCard icon={TrendingUp} label="Completed" value={stats?.completed || 0} color="green" />}
+        {!isStaff && <StatCard icon={DollarSign} label="Revenue" value={`$${(stats?.totalRevenue || 0).toFixed(0)}`} color="purple" />}
       </div>
 
       {/* Today's Schedule */}

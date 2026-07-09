@@ -13,6 +13,7 @@ interface Staff {
   phone: string | null;
   color: string;
   isActive: boolean;
+  user: { email: string } | null;
 }
 
 const COLORS = ["#ec4899", "#8b5cf6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#6366f1", "#84cc16"];
@@ -21,6 +22,27 @@ export default function StaffPage() {
   const [staff, setStaff] = useState<Staff[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: "", email: "", phone: "", color: COLORS[0] });
+  const [accountFor, setAccountFor] = useState<string | null>(null);
+  const [accountForm, setAccountForm] = useState({ email: "", password: "" });
+  const [accountMsg, setAccountMsg] = useState("");
+
+  async function saveAccount(e: React.FormEvent, staffId: string) {
+    e.preventDefault();
+    setAccountMsg("");
+    const res = await fetch(`/api/staff/${staffId}/account`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(accountForm),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setAccountMsg(data.error || "Something went wrong");
+      return;
+    }
+    setAccountFor(null);
+    setAccountForm({ email: "", password: "" });
+    load();
+  }
 
   async function load() {
     const data = await fetch("/api/staff").then((r) => r.json());
@@ -124,7 +146,34 @@ export default function StaffPage() {
                 <Button variant="outline" size="sm" className="flex-1" onClick={() => toggle(s.id, s.isActive)}>
                   {s.isActive ? "Deactivate" : "Activate"}
                 </Button>
+                <Button variant="outline" size="sm" className="flex-1"
+                  onClick={() => {
+                    setAccountFor(accountFor === s.id ? null : s.id);
+                    setAccountForm({ email: s.user?.email || s.email || "", password: "" });
+                    setAccountMsg("");
+                  }}>
+                  {s.user ? "Reset Login" : "Create Login"}
+                </Button>
               </div>
+
+              {s.user && accountFor !== s.id && (
+                <p className="text-xs text-gray-400 mt-2">Login: {s.user.email}</p>
+              )}
+
+              {accountFor === s.id && (
+                <form onSubmit={(e) => saveAccount(e, s.id)} className="mt-3 space-y-2 border-t border-gray-100 pt-3">
+                  <Input required type="email" placeholder="Login email"
+                    value={accountForm.email}
+                    onChange={(e) => setAccountForm({ ...accountForm, email: e.target.value })} />
+                  <Input required type="text" placeholder={s.user ? "New password" : "Password"}
+                    value={accountForm.password}
+                    onChange={(e) => setAccountForm({ ...accountForm, password: e.target.value })} />
+                  {accountMsg && <p className="text-xs text-red-500">{accountMsg}</p>}
+                  <Button type="submit" size="sm" className="w-full">
+                    {s.user ? "Update Login" : "Create Login"}
+                  </Button>
+                </form>
+              )}
             </CardContent>
           </Card>
         ))}

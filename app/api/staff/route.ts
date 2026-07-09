@@ -1,11 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireAdmin, requireAuth } from "@/lib/auth";
+import { requireAdmin, getSession } from "@/lib/auth";
 
 export async function GET() {
-  await requireAuth();
+  const user = await getSession();
+
+  // Public (booking page) only needs names and colors
+  if (!user || user.role !== "ADMIN") {
+    const staff = await prisma.staff.findMany({
+      where: { isActive: true },
+      select: { id: true, name: true, color: true },
+      orderBy: { name: "asc" },
+    });
+    return NextResponse.json(staff);
+  }
+
   const staff = await prisma.staff.findMany({
     where: { isActive: true },
+    include: { user: { select: { email: true } } },
     orderBy: { name: "asc" },
   });
   return NextResponse.json(staff);
