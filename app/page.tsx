@@ -11,6 +11,9 @@ const services = [
   { icon: "⚡", name: "Laser", desc: "Hair removal & skin treatments" },
 ];
 
+// Re-render at most once a minute so admin edits go live quickly
+export const revalidate = 60;
+
 async function getSettings() {
   const rows = await prisma.setting.findMany();
   return Object.fromEntries(rows.map((r) => [r.key, r.value]));
@@ -18,6 +21,9 @@ async function getSettings() {
 
 export default async function HomePage() {
   const settings = await getSettings();
+  const waLink = settings.whatsapp_number
+    ? `https://wa.me/${settings.whatsapp_number.replace(/[^0-9]/g, "")}`
+    : "https://wa.me/your-number";
   return (
     <div className="min-h-screen bg-cream text-charcoal">
       {/* Nav */}
@@ -44,18 +50,17 @@ export default async function HomePage() {
             <Star className="w-3.5 h-3.5" /> Premium Beauty Care
           </div>
           <h1 className="font-heading text-5xl md:text-7xl font-medium leading-tight mb-4">
-            Your skin deserves
+            {settings.hero_title || "Your skin deserves"}
           </h1>
-          <p className="font-brand text-5xl md:text-7xl text-taupe mb-8">something divine</p>
+          <p className="font-brand text-5xl md:text-7xl text-taupe mb-8">{settings.hero_script || "something divine"}</p>
           <p className="text-lg md:text-xl text-charcoal/60 max-w-2xl mx-auto mb-12 font-light">
-            Experience luxury beauty treatments in a calm, welcoming space.
-            Book your appointment online in seconds, or reach us on WhatsApp.
+            {settings.hero_subtitle || "Experience luxury beauty treatments in a calm, welcoming space. Book your appointment online in seconds, or reach us on WhatsApp."}
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link href="/book" className="bg-charcoal text-cream tracking-wide px-10 py-4 rounded-full hover:bg-black transition-colors text-base inline-flex items-center justify-center gap-2">
               <Calendar className="w-5 h-5" /> Book Appointment
             </Link>
-            <a href="https://wa.me/your-number" className="border border-charcoal/25 text-charcoal tracking-wide px-10 py-4 rounded-full hover:border-charcoal hover:bg-cream-soft transition-colors text-base inline-flex items-center justify-center gap-2">
+            <a href={waLink} className="border border-charcoal/25 text-charcoal tracking-wide px-10 py-4 rounded-full hover:border-charcoal hover:bg-cream-soft transition-colors text-base inline-flex items-center justify-center gap-2">
               💬 WhatsApp Us
             </a>
           </div>
@@ -66,8 +71,8 @@ export default async function HomePage() {
       <section id="services" className="py-24 bg-cream-soft border-y border-sand">
         <div className="max-w-6xl mx-auto px-6">
           <div className="text-center mb-14">
-            <p className="font-brand text-4xl text-taupe mb-2">our services</p>
-            <h2 className="font-heading text-3xl md:text-4xl font-medium">Everything you need to glow</h2>
+            <p className="font-brand text-4xl text-taupe mb-2">{settings.services_script || "our services"}</p>
+            <h2 className="font-heading text-3xl md:text-4xl font-medium">{settings.services_title || "Everything you need to glow"}</h2>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             {services.map((s) => (
@@ -115,8 +120,8 @@ export default async function HomePage() {
       <section className="py-24 bg-charcoal text-cream">
         <div className="max-w-3xl mx-auto px-6 text-center">
           <Butterfly className="w-12 h-12 mx-auto mb-6 text-cream/80" />
-          <p className="font-brand text-5xl mb-3">ready to glow?</p>
-          <p className="text-cream/60 mb-10 font-light">Book your appointment now — it only takes 2 minutes.</p>
+          <p className="font-brand text-5xl mb-3">{settings.cta_script || "ready to glow?"}</p>
+          <p className="text-cream/60 mb-10 font-light">{settings.cta_subtitle || "Book your appointment now — it only takes 2 minutes."}</p>
           <Link href="/book" className="bg-cream text-charcoal tracking-wide px-10 py-4 rounded-full hover:bg-white transition-colors inline-flex items-center gap-2">
             <Calendar className="w-5 h-5" /> Book Now — It&apos;s Free
           </Link>
@@ -130,7 +135,7 @@ export default async function HomePage() {
             <Butterfly className="w-8 h-8 -mt-1" />
             <span className="font-brand text-3xl">{settings.salon_name || "Divine Skin"}</span>
           </div>
-          <p className="font-light">Mon–Sat · 9am–6pm · Walk-ins welcome</p>
+          <p className="font-light">{settings.footer_tagline || "Mon–Sat · 9am–6pm · Walk-ins welcome"}</p>
           {/* Social links */}
           {(settings.instagram_url || settings.tiktok_url || settings.google_reviews_url) && (
             <div className="flex items-center justify-center gap-6 mt-6">
