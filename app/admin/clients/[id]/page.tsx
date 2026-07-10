@@ -15,7 +15,8 @@ interface ClientPackage {
   appointments: { id: string; startTime: string; status: string }[];
 }
 interface Photo { id: string; url: string; type: string; notes: string | null; takenAt: string; }
-interface Client { id: string; name: string; phone: string; email: string | null; notes: string | null; createdAt: string; }
+interface Client { id: string; name: string; phone: string; email: string | null; notes: string | null; dob: string | null; address: string | null; createdAt: string; }
+interface Transaction { id: string; date: string; description: string; amount: number; paid: boolean; reference: string | null; }
 
 const PHOTO_TYPES = ["BEFORE", "AFTER", "GENERAL"];
 
@@ -26,7 +27,11 @@ export default function ClientDetailPage() {
   const [clientPackages, setClientPackages] = useState<ClientPackage[]>([]);
   const [availablePackages, setAvailablePackages] = useState<Package[]>([]);
   const [photos, setPhotos] = useState<Photo[]>([]);
-  const [tab, setTab] = useState<"packages" | "photos">("packages");
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [tab, setTab] = useState<"record" | "packages" | "photos">("record");
+  const [profile, setProfile] = useState({ name: "", phone: "", email: "", dob: "", address: "", notes: "" });
+  const [profileSaved, setProfileSaved] = useState(false);
+  const [txForm, setTxForm] = useState({ date: new Date().toISOString().slice(0, 10), description: "", amount: "", paid: true, reference: "" });
   const [showAddPkg, setShowAddPkg] = useState(false);
   const [selectedPkg, setSelectedPkg] = useState("");
   const [pkgNotes, setPkgNotes] = useState("");
@@ -37,16 +42,71 @@ export default function ClientDetailPage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function load() {
-    const [c, cp, pkgs, ph] = await Promise.all([
+    const [c, cp, pkgs, ph, txs] = await Promise.all([
       fetch(`/api/clients/${id}`).then((r) => r.json()),
       fetch(`/api/clients/${id}/packages`).then((r) => r.json()),
       fetch("/api/packages").then((r) => r.json()),
       fetch(`/api/clients/${id}/photos`).then((r) => r.json()),
+      fetch(`/api/clients/${id}/transactions`).then((r) => r.json()),
     ]);
     setClient(c);
+    setProfile({
+      name: c.name || "",
+      phone: c.phone || "",
+      email: c.email || "",
+      dob: c.dob ? c.dob.slice(0, 10) : "",
+      address: c.address || "",
+      notes: c.notes || "",
+    });
     setClientPackages(Array.isArray(cp) ? cp : []);
     setAvailablePackages(Array.isArray(pkgs) ? pkgs.filter((p: Package & { isActive: boolean }) => p.isActive) : []);
     setPhotos(Array.isArray(ph) ? ph : []);
+    setTransactions(Array.isArray(txs) ? txs : []);
+  }
+
+  async function saveProfile(e: React.FormEvent) {
+    e.preventDefault();
+    await fetch(`/api/clients/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: profile.name,
+        phone: profile.phone,
+        email: profile.email || null,
+        dob: profile.dob || null,
+        address: profile.address || null,
+        notes: profile.notes || null,
+      }),
+    });
+    setProfileSaved(true);
+    setTimeout(() => setProfileSaved(false), 2000);
+    load();
+  }
+
+  async function addTransaction(e: React.FormEvent) {
+    e.preventDefault();
+    await fetch(`/api/clients/${id}/transactions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(txForm),
+    });
+    setTxForm({ date: new Date().toISOString().slice(0, 10), description: "", amount: "", paid: true, reference: "" });
+    load();
+  }
+
+  async function togglePaid(tx: Transaction) {
+    await fetch(`/api/clients/${id}/transactions/${tx.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paid: !tx.paid }),
+    });
+    load();
+  }
+
+  async function deleteTransaction(txId: string) {
+    if (!confirm("Delete this transaction?")) return;
+    await fetch(`/api/clients/${id}/transactions/${txId}`, { method: "DELETE" });
+    load();
   }
 
   useEffect(() => { load(); }, [id]);
@@ -101,15 +161,139 @@ export default function ClientDetailPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-200">
-        {(["packages", "photos"] as const).map((t) => (
+      <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
+        {(["record", "packages", "photos"] as const).map((t) => (
           <button key={t}
             onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-medium capitalize border-b-2 transition-colors ${tab === t ? "border-pink-600 text-pink-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
-            {t === "packages" ? "📦 Packages" : "📸 Photos"}
+            className={`px-4 py-2 text-sm font-medium capitalize border-b-2 transition-colors whitespace-nowrap ${tab === t ? "border-pink-600 text-pink-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
+            {t === "record" ? "📋 Record" : t === "packages" ? "📦 Packages" : "📸 Photos"}
           </button>
         ))}
       </div>
+
+      {/* Client Record tab */}
+      {tab === "record" && (
+        <div className="space-y-4">
+          {/* Profile */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Profile</CardTitle>
+                <Button size="sm" onClick={saveProfile}>{profileSaved ? "✓ Saved!" : "Save"}</Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={saveProfile} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                  <input required className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
+                  <input type="date" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={profile.dob} onChange={(e) => setProfile({ ...profile, dob: e.target.value })} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone *</label>
+                  <input required className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                  <input type="email" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={profile.email} onChange={(e) => setProfile({ ...profile, email: e.target.value })} />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                  <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={profile.address} onChange={(e) => setProfile({ ...profile, address: e.target.value })} />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                  <textarea className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm min-h-[70px]" value={profile.notes} onChange={(e) => setProfile({ ...profile, notes: e.target.value })} placeholder="Allergies, preferences, skin type…" />
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+
+          {/* Transaction history */}
+          <Card>
+            <CardHeader><CardTitle>Transaction History</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              {/* Add row */}
+              <form onSubmit={addTransaction} className="grid grid-cols-2 md:grid-cols-6 gap-2 items-end">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Date</label>
+                  <input type="date" required className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm" value={txForm.date} onChange={(e) => setTxForm({ ...txForm, date: e.target.value })} />
+                </div>
+                <div className="col-span-2 md:col-span-2">
+                  <label className="block text-xs text-gray-500 mb-1">Description</label>
+                  <input required className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm" placeholder="e.g. Laser session, package payment…" value={txForm.description} onChange={(e) => setTxForm({ ...txForm, description: e.target.value })} />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Amount ($)</label>
+                  <input type="number" step="0.01" required className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm" value={txForm.amount} onChange={(e) => setTxForm({ ...txForm, amount: e.target.value })} />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Reference</label>
+                  <input className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm" placeholder="Optional" value={txForm.reference} onChange={(e) => setTxForm({ ...txForm, reference: e.target.value })} />
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-1.5 text-sm text-gray-600">
+                    <input type="checkbox" checked={txForm.paid} onChange={(e) => setTxForm({ ...txForm, paid: e.target.checked })} />
+                    Paid
+                  </label>
+                  <Button type="submit" size="sm"><Plus className="w-4 h-4" /></Button>
+                </div>
+              </form>
+
+              {/* Table */}
+              {transactions.length === 0 ? (
+                <p className="text-center text-gray-400 py-6 text-sm">No transactions yet</p>
+              ) : (
+                <>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-medium text-gray-500">Date</th>
+                          <th className="px-3 py-2 text-left font-medium text-gray-500">Description</th>
+                          <th className="px-3 py-2 text-right font-medium text-gray-500">Amount</th>
+                          <th className="px-3 py-2 text-center font-medium text-gray-500">Paid</th>
+                          <th className="px-3 py-2 text-left font-medium text-gray-500">Reference</th>
+                          <th className="px-3 py-2"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {transactions.map((tx) => (
+                          <tr key={tx.id} className="hover:bg-gray-50">
+                            <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{format(new Date(tx.date), "MMM d, yyyy")}</td>
+                            <td className="px-3 py-2 font-medium text-gray-900">{tx.description}</td>
+                            <td className="px-3 py-2 text-right font-medium text-gray-900">${tx.amount.toFixed(2)}</td>
+                            <td className="px-3 py-2 text-center">
+                              <button onClick={() => togglePaid(tx)} title="Click to toggle">
+                                <Badge variant={tx.paid ? "success" : "warning"}>{tx.paid ? "✓ Paid" : "Unpaid"}</Badge>
+                              </button>
+                            </td>
+                            <td className="px-3 py-2 text-gray-500">{tx.reference || "—"}</td>
+                            <td className="px-3 py-2 text-right">
+                              <button onClick={() => deleteTransaction(tx.id)} className="text-gray-300 hover:text-red-500">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="flex justify-end gap-6 text-sm border-t border-gray-100 pt-3">
+                    <span className="text-gray-500">Total: <span className="font-semibold text-gray-900">${transactions.reduce((s, t) => s + t.amount, 0).toFixed(2)}</span></span>
+                    {transactions.some((t) => !t.paid) && (
+                      <span className="text-gray-500">Unpaid: <span className="font-semibold text-amber-600">${transactions.filter((t) => !t.paid).reduce((s, t) => s + t.amount, 0).toFixed(2)}</span></span>
+                    )}
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Packages tab */}
       {tab === "packages" && (

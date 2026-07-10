@@ -71,15 +71,30 @@ model Service {
 // ─── Clients ─────────────────────────────────────────────────────────────────
 
 model Client {
-  id              String          @id @default(cuid())
+  id              String              @id @default(cuid())
   name            String
-  phone           String          @unique
+  phone           String              @unique
   email           String?
   notes           String?
+  dob             DateTime?
+  address         String?
   appointments    Appointment[]
   clientPackages  ClientPackage[]
   photos          ClientPhoto[]
-  createdAt       DateTime        @default(now())
+  transactions    ClientTransaction[]
+  createdAt       DateTime            @default(now())
+}
+
+model ClientTransaction {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  date        DateTime @default(now())
+  description String
+  amount      Float
+  paid        Boolean  @default(true)
+  reference   String?
+  createdAt   DateTime @default(now())
 }
 
 // ─── Appointments ─────────────────────────────────────────────────────────────

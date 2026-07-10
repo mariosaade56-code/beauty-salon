@@ -13,6 +13,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   await requireAdmin();
   const { id } = await params;
   const body = await req.json();
+  if ("dob" in body) {
+    body.dob = body.dob ? new Date(body.dob) : null;
+  }
   const client = await prisma.client.update({ where: { id }, data: body });
   return NextResponse.json(client);
 }
