@@ -6,6 +6,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   await requireAuth();
   const { id } = await params;
   const body = await req.json();
+  if ("amountPaid" in body) {
+    body.amountPaid = body.amountPaid != null ? parseFloat(body.amountPaid) : null;
+  }
 
   const existing = await prisma.appointment.findUnique({ where: { id } });
 
@@ -37,16 +40,36 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     !appointment.clientPackageId &&
     appointment.service.price
   ) {
-    await prisma.clientTransaction.create({
-      data: {
-        clientId: appointment.clientId,
-        date: appointment.startTime,
-        description: appointment.service.name,
-        amount: appointment.service.price,
-        paid: true,
-        reference: "Appointment",
-      },
-    });
+    const price = appointment.service.price;
+    const status = appointment.paymentStatus || "PAID";
+    const paidAmount =
+      status === "PAID" ? price : status === "PARTIAL" ? Math.min(appointment.amountPaid ?? 0, price) : 0;
+    const balance = price - paidAmount;
+
+    if (paidAmount > 0) {
+      await prisma.clientTransaction.create({
+        data: {
+          clientId: appointment.clientId,
+          date: appointment.startTime,
+          description: status === "PARTIAL" ? `${appointment.service.name} (partial payment)` : appointment.service.name,
+          amount: paidAmount,
+          paid: true,
+          reference: "Appointment",
+        },
+      });
+    }
+    if (balance > 0) {
+      await prisma.clientTransaction.create({
+        data: {
+          clientId: appointment.clientId,
+          date: appointment.startTime,
+          description: `${appointment.service.name} (balance due)`,
+          amount: balance,
+          paid: false,
+          reference: "Appointment",
+        },
+      });
+    }
   }
 
   return NextResponse.json(appointment);

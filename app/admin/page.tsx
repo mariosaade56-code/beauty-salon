@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { Calendar, Users, DollarSign, TrendingUp, Clock } from "lucide-react";
+import PaymentBadge from "@/components/payment-badge";
 
 interface Appointment {
   id: string;
@@ -11,6 +12,8 @@ interface Appointment {
   endTime: string;
   status: string;
   source: string;
+  paymentStatus: string | null;
+  amountPaid: number | null;
   client: { name: string; phone: string };
   service: { name: string; price: number | null };
   staff: { name: string } | null;
@@ -92,9 +95,12 @@ export default function DashboardPage() {
                       <p className="text-xs text-gray-500">{appt.service.name} · {appt.staff?.name || "Any staff"}</p>
                     </div>
                   </div>
-                  <Badge variant={statusColors[appt.status] || "outline"}>
-                    {appt.status}
-                  </Badge>
+                  <div className="flex flex-col items-end gap-1">
+                    <Badge variant={statusColors[appt.status] || "outline"}>
+                      {appt.status}
+                    </Badge>
+                    <PaymentBadge status={appt.paymentStatus} amountPaid={appt.amountPaid} price={appt.service.price} />
+                  </div>
                 </div>
               ))}
             </div>
