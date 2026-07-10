@@ -4,8 +4,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { format } from "date-fns";
-import { Search, Upload, Phone, Mail, ChevronRight } from "lucide-react";
+import { Search, Upload, Phone, Mail, ChevronRight, Plus, X } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { CardHeader, CardTitle } from "@/components/ui/card";
 
 interface Client {
   id: string;
@@ -22,6 +23,27 @@ export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [search, setSearch] = useState("");
   const [importing, setImporting] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [newClient, setNewClient] = useState({ name: "", phone: "", email: "" });
+  const [newError, setNewError] = useState("");
+
+  async function createClient(e: React.FormEvent) {
+    e.preventDefault();
+    setNewError("");
+    const res = await fetch("/api/clients", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: newClient.name, phone: newClient.phone, email: newClient.email || null }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setNewError(data.error || "Something went wrong");
+      return;
+    }
+    setShowNew(false);
+    setNewClient({ name: "", phone: "", email: "" });
+    router.push(`/admin/clients/${data.id}`);
+  }
 
   async function load(q = "") {
     const data = await fetch(`/api/clients?search=${encodeURIComponent(q)}`).then((r) => r.json());
@@ -49,14 +71,50 @@ export default function ClientsPage() {
     <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl md:text-2xl font-bold text-gray-900">Clients</h1>
-        <label className="cursor-pointer">
-          <input type="file" accept=".csv" className="hidden" onChange={handleImport} />
-          <Button variant="outline" size="sm" disabled={importing} onClick={() => {}}>
-            <Upload className="w-4 h-4 mr-1" />
-            {importing ? "Importing..." : "Import CSV"}
+        <div className="flex gap-2">
+          <label className="cursor-pointer">
+            <input type="file" accept=".csv" className="hidden" onChange={handleImport} />
+            <Button variant="outline" size="sm" disabled={importing} onClick={() => {}}>
+              <Upload className="w-4 h-4 mr-1" />
+              {importing ? "Importing..." : "Import CSV"}
+            </Button>
+          </label>
+          <Button size="sm" onClick={() => { setShowNew(true); setNewError(""); }}>
+            <Plus className="w-4 h-4 mr-1" /> Add Client
           </Button>
-        </label>
+        </div>
       </div>
+
+      {showNew && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>New Client</CardTitle>
+              <button onClick={() => setShowNew(false)}><X className="w-5 h-5 text-gray-400" /></button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={createClient} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                <Input required value={newClient.name} onChange={(e) => setNewClient({ ...newClient, name: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Phone *</label>
+                <Input required value={newClient.phone} onChange={(e) => setNewClient({ ...newClient, phone: e.target.value })} placeholder="+961 70 123 456" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <Input type="email" value={newClient.email} onChange={(e) => setNewClient({ ...newClient, email: e.target.value })} />
+              </div>
+              {newError && <p className="text-sm text-red-500 md:col-span-3">{newError}</p>}
+              <div className="md:col-span-3">
+                <Button type="submit">Create Client</Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />

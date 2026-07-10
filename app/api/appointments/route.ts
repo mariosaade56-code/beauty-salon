@@ -82,6 +82,16 @@ export async function POST(req: NextRequest) {
         },
       });
       clientPackageId = created.id;
+      // Log the package sale in the client's transaction history
+      await prisma.clientTransaction.create({
+        data: {
+          clientId: client.id,
+          description: `${pkg.name} (${pkg.sessionCount} sessions)`,
+          amount: pkg.price,
+          paid: true,
+          reference: "Package",
+        },
+      });
     }
   }
 

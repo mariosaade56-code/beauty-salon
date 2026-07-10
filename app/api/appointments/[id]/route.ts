@@ -27,6 +27,28 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     });
   }
 
+  // Log the sale in the client's transaction history when a service is
+  // completed. Package sessions are skipped — the money was logged when
+  // the package was purchased.
+  if (
+    body.status === "COMPLETED" &&
+    existing &&
+    existing.status !== "COMPLETED" &&
+    !appointment.clientPackageId &&
+    appointment.service.price
+  ) {
+    await prisma.clientTransaction.create({
+      data: {
+        clientId: appointment.clientId,
+        date: appointment.startTime,
+        description: appointment.service.name,
+        amount: appointment.service.price,
+        paid: true,
+        reference: "Appointment",
+      },
+    });
+  }
+
   return NextResponse.json(appointment);
 }
 

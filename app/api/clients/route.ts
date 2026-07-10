@@ -46,6 +46,13 @@ export async function POST(req: NextRequest) {
     );
     return NextResponse.json({ imported: results.filter((r) => r.status === "fulfilled").length });
   }
-  const client = await prisma.client.create({ data: body });
-  return NextResponse.json(client);
+  try {
+    const client = await prisma.client.create({ data: body });
+    return NextResponse.json(client);
+  } catch (e: unknown) {
+    if (typeof e === "object" && e && "code" in e && e.code === "P2002") {
+      return NextResponse.json({ error: "A client with this phone number already exists" }, { status: 400 });
+    }
+    throw e;
+  }
 }

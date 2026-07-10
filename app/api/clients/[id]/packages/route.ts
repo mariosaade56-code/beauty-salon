@@ -38,5 +38,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     },
     include: { package: { include: { service: { select: { name: true } } } } },
   });
+
+  // Log the package sale in the client's transaction history
+  await prisma.clientTransaction.create({
+    data: {
+      clientId: id,
+      description: `${pkg.name} (${pkg.sessionCount} sessions)`,
+      amount: pkg.price,
+      paid: true,
+      reference: "Package",
+    },
+  });
+
   return NextResponse.json(cp);
 }
