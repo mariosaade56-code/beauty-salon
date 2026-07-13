@@ -18,6 +18,9 @@ export async function createSession(userId: string) {
   return session.token;
 }
 
+// Admin sessions end after this much inactivity
+const ADMIN_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+
 export async function getSession() {
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
@@ -29,6 +32,20 @@ export async function getSession() {
   });
 
   if (!session || session.expiresAt < new Date()) return null;
+
+  if (session.user.role === "ADMIN") {
+    const idleMs = Date.now() - session.lastActiveAt.getTime();
+    if (idleMs > ADMIN_IDLE_TIMEOUT_MS) {
+      await prisma.session.delete({ where: { id: session.id } }).catch(() => {});
+      return null;
+    }
+    // Sliding window: any authenticated request counts as activity
+    await prisma.session.update({
+      where: { id: session.id },
+      data: { lastActiveAt: new Date() },
+    });
+  }
+
   return session.user;
 }
 

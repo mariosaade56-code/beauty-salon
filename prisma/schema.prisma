@@ -26,11 +26,12 @@ enum Role {
 }
 
 model Session {
-  id        String   @id @default(cuid())
-  userId    String
-  token     String   @unique @default(cuid())
-  expiresAt DateTime
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id           String   @id @default(cuid())
+  userId       String
+  token        String   @unique @default(cuid())
+  expiresAt    DateTime
+  lastActiveAt DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // ─── Staff ───────────────────────────────────────────────────────────────────
