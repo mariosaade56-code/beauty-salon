@@ -113,14 +113,27 @@ function BookingForm() {
         <div className="space-y-6">
           <div>
             <label className="block text-sm font-medium text-charcoal/70 mb-2">Service *</label>
-            <div className="grid grid-cols-2 gap-3">
-              {services.map((s) => (
-                <button key={s.id} type="button"
-                  onClick={() => setForm({ ...form, serviceId: s.id, time: "" })}
-                  className={`p-4 rounded-xl border-2 text-left transition-all ${form.serviceId === s.id ? "border-charcoal bg-sand/40" : "border-sand bg-cream-soft hover:border-taupe"}`}>
-                  <p className="font-medium text-charcoal">{s.name}</p>
-                  <p className="text-xs text-charcoal/50">{s.duration} min{s.price ? ` · $${s.price}` : ""}</p>
-                </button>
+            <div className="space-y-5">
+              {[
+                { label: "Skincare", items: services.filter((s) => s.category === "skincare") },
+                { label: "Cellulite Treatment", items: services.filter((s) => s.category === "cellulite") },
+                { label: "Laser Hair Removal — Women", items: services.filter((s) => s.category === "laser" && !s.name.includes("(Men)")) },
+                { label: "Laser Hair Removal — Men", items: services.filter((s) => s.category === "laser" && s.name.includes("(Men)")) },
+                { label: "Other", items: services.filter((s) => !["skincare", "cellulite", "laser"].includes(s.category)) },
+              ].filter((g) => g.items.length > 0).map((group) => (
+                <div key={group.label}>
+                  <p className="text-xs font-semibold text-taupe uppercase tracking-wider mb-2">{group.label}</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {group.items.map((s) => (
+                      <button key={s.id} type="button"
+                        onClick={() => setForm({ ...form, serviceId: s.id, time: "" })}
+                        className={`p-4 rounded-xl border-2 text-left transition-all ${form.serviceId === s.id ? "border-charcoal bg-sand/40" : "border-sand bg-cream-soft hover:border-taupe"}`}>
+                        <p className="font-medium text-charcoal">{s.name.replace(" (Women)", "").replace(" (Men)", "")}</p>
+                        <p className="text-xs text-charcoal/50">{s.duration} min{s.price ? ` · $${s.price}` : ""}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           </div>

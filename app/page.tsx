@@ -4,11 +4,9 @@ import { prisma } from "@/lib/db";
 import Butterfly from "@/components/butterfly";
 
 const services = [
-  { icon: "💅", name: "Manicure", desc: "Classic & gel nail treatments" },
-  { icon: "🦶", name: "Pedicure", desc: "Relaxing foot care & polish" },
-  { icon: "✨", name: "Facial", desc: "Deep cleanse & glow treatments" },
-  { icon: "🌿", name: "Slimming", desc: "Body contouring sessions" },
-  { icon: "⚡", name: "Laser", desc: "Hair removal & skin treatments" },
+  { icon: "✨", name: "Skincare", slug: "skincare", desc: "Facials, peels & glow treatments" },
+  { icon: "🌿", name: "Cellulite Treatment", slug: "cellulite", desc: "Body contouring sessions" },
+  { icon: "⚡", name: "Laser Hair Removal", slug: "laser", desc: "For women & men" },
 ];
 
 // Re-render at most once a minute so admin edits go live quickly
@@ -74,10 +72,10 @@ export default async function HomePage() {
             <p className="font-brand text-4xl text-taupe mb-2">{settings.services_script || "our services"}</p>
             <h2 className="font-heading text-3xl md:text-4xl font-medium">{settings.services_title || "Everything you need to glow"}</h2>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-3xl mx-auto">
             {services.map((s) => (
-              <Link key={s.name} href={`/book?service=${s.name.toLowerCase()}`}
-                className="group bg-cream border border-sand rounded-2xl p-6 text-center hover:border-taupe hover:shadow-[0_8px_30px_rgba(160,141,117,0.15)] transition-all">
+              <Link key={s.name} href={`/book?service=${s.slug}`}
+                className="group bg-cream border border-sand rounded-2xl p-8 text-center hover:border-taupe hover:shadow-[0_8px_30px_rgba(160,141,117,0.15)] transition-all">
                 <div className="text-4xl mb-4">{s.icon}</div>
                 <h3 className="font-heading text-xl font-medium group-hover:text-taupe transition-colors">{s.name}</h3>
                 <p className="text-sm text-charcoal/50 mt-1.5 font-light">{s.desc}</p>

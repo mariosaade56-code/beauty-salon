@@ -18,9 +18,9 @@ interface Service {
   reminderDays: number | null;
 }
 
-const CATEGORIES = ["mani", "pedi", "facial", "slimming", "laser", "other"];
+const CATEGORIES = ["skincare", "cellulite", "laser", "other"];
 
-const blank = { name: "", category: "mani", duration: 60, price: "", description: "", reminderDays: "" };
+const blank = { name: "", category: "skincare", duration: 60, price: "", description: "", reminderDays: "" };
 
 export default function ServicesPage() {
   const [services, setServices] = useState<Service[]>([]);
