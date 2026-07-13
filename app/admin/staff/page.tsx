@@ -46,7 +46,7 @@ export default function StaffPage() {
 
   async function load() {
     const data = await fetch("/api/staff").then((r) => r.json());
-    setStaff(data);
+    setStaff(Array.isArray(data) ? data : []);
   }
 
   useEffect(() => { load(); }, []);

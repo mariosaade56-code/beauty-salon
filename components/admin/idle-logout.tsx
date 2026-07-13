@@ -37,7 +37,12 @@ export default function IdleLogout() {
     fetch("/api/auth/me")
       .then((r) => r.json())
       .then((u) => {
-        if (u?.role === "ADMIN") {
+        // Session already expired (e.g. page reopened after idle timeout)
+        if (!u) {
+          router.push("/login");
+          return;
+        }
+        if (u.role === "ADMIN") {
           isAdmin.current = true;
           lastPing = Date.now();
           events.forEach((e) => window.addEventListener(e, reset, { passive: true }));

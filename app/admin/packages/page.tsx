@@ -37,8 +37,8 @@ export default function PackagesPage() {
       fetch("/api/packages").then((r) => r.json()),
       fetch("/api/services").then((r) => r.json()),
     ]);
-    setPackages(pkgs);
-    setServices(svcs);
+    setPackages(Array.isArray(pkgs) ? pkgs : []);
+    setServices(Array.isArray(svcs) ? svcs : []);
   }
 
   useEffect(() => { load(); }, []);

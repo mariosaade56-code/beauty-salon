@@ -43,7 +43,7 @@ export default function AppointmentsPage() {
 
   async function load(d: Date) {
     const data = await fetch(`/api/appointments?date=${format(d, "yyyy-MM-dd")}`).then((r) => r.json());
-    setAppointments(data);
+    setAppointments(Array.isArray(data) ? data : []);
   }
 
   useEffect(() => { load(date); }, [date]);

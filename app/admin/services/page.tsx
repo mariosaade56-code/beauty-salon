@@ -30,7 +30,7 @@ export default function ServicesPage() {
 
   async function load() {
     const data = await fetch("/api/services").then((r) => r.json());
-    setServices(data);
+    setServices(Array.isArray(data) ? data : []);
   }
 
   useEffect(() => { load(); }, []);

@@ -47,7 +47,7 @@ export default function ClientsPage() {
 
   async function load(q = "") {
     const data = await fetch(`/api/clients?search=${encodeURIComponent(q)}`).then((r) => r.json());
-    setClients(data);
+    setClients(Array.isArray(data) ? data : []);
   }
 
   useEffect(() => { load(); }, []);

@@ -43,14 +43,14 @@ export default function DashboardPage() {
     const todayStr = format(today, "yyyy-MM-dd");
     fetch(`/api/appointments?date=${todayStr}`)
       .then((r) => r.json())
-      .then(setTodayAppts);
+      .then((d) => setTodayAppts(Array.isArray(d) ? d : []));
 
     fetch("/api/auth/me").then((r) => r.json()).then((u) => {
       if (u?.role) setRole(u.role);
       if (u?.role !== "STAFF") {
         fetch(`/api/reports?period=month`)
           .then((r) => (r.ok ? r.json() : null))
-          .then(setStats);
+          .then((d) => setStats(d && typeof d.total === "number" ? d : null));
       }
     });
   }, []);

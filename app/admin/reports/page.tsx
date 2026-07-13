@@ -25,7 +25,9 @@ export default function ReportsPage() {
   const [period, setPeriod] = useState<"day" | "week" | "month">("month");
 
   useEffect(() => {
-    fetch(`/api/reports?period=${period}`).then((r) => r.json()).then(setData);
+    fetch(`/api/reports?period=${period}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setData(d && typeof d.total === "number" ? d : null));
   }, [period]);
 
   const hourData = data
