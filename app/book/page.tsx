@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { format, addDays } from "date-fns";
-import { CheckCircle, ChevronLeft, ChevronRight } from "lucide-react";
+import { CheckCircle, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
 import Link from "next/link";
 import Butterfly from "@/components/butterfly";
 
@@ -28,6 +28,15 @@ function BookingForm() {
   });
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
+
+  const serviceGroups = [
+    { key: "skincare", label: "Skincare", items: services.filter((s) => s.category === "skincare") },
+    { key: "cellulite", label: "Cellulite Treatment", items: services.filter((s) => s.category === "cellulite") },
+    { key: "laser-women", label: "Laser Hair Removal — Women", items: services.filter((s) => s.category === "laser" && !s.name.includes("(Men)")) },
+    { key: "laser-men", label: "Laser Hair Removal — Men", items: services.filter((s) => s.category === "laser" && s.name.includes("(Men)")) },
+    { key: "other", label: "Other", items: services.filter((s) => !["skincare", "cellulite", "laser"].includes(s.category)) },
+  ].filter((g) => g.items.length > 0);
 
   useEffect(() => {
     fetch("/api/services").then((r) => r.json()).then(setServices);
@@ -38,12 +47,12 @@ function BookingForm() {
     });
   }, []);
 
-  // Pre-select service from URL
+  // Open the matching category when arriving from a homepage link
   useEffect(() => {
     const svc = searchParams.get("service");
     if (svc && services.length) {
-      const match = services.find((s) => s.category === svc || s.name.toLowerCase().includes(svc));
-      if (match) setForm((f) => ({ ...f, serviceId: match.id }));
+      const map: Record<string, string> = { skincare: "skincare", cellulite: "cellulite", laser: "laser-women" };
+      if (map[svc]) setOpenGroup(map[svc]);
     }
   }, [searchParams, services]);
 
@@ -114,28 +123,43 @@ function BookingForm() {
         <div className="space-y-6">
           <div>
             <label className="block text-sm font-medium text-charcoal/70 mb-2">Service *</label>
-            <div className="space-y-5">
-              {[
-                { label: "Skincare", items: services.filter((s) => s.category === "skincare") },
-                { label: "Cellulite Treatment", items: services.filter((s) => s.category === "cellulite") },
-                { label: "Laser Hair Removal — Women", items: services.filter((s) => s.category === "laser" && !s.name.includes("(Men)")) },
-                { label: "Laser Hair Removal — Men", items: services.filter((s) => s.category === "laser" && s.name.includes("(Men)")) },
-                { label: "Other", items: services.filter((s) => !["skincare", "cellulite", "laser"].includes(s.category)) },
-              ].filter((g) => g.items.length > 0).map((group) => (
-                <div key={group.label}>
-                  <p className="text-xs font-semibold text-taupe uppercase tracking-wider mb-2">{group.label}</p>
-                  <div className="grid grid-cols-2 gap-3">
-                    {group.items.map((s) => (
-                      <button key={s.id} type="button"
-                        onClick={() => setForm({ ...form, serviceId: s.id, time: "" })}
-                        className={`p-4 rounded-xl border-2 text-left transition-all ${form.serviceId === s.id ? "border-charcoal bg-sand/40" : "border-sand bg-cream-soft hover:border-taupe"}`}>
-                        <p className="font-medium text-charcoal">{s.name.replace(" (Women)", "").replace(" (Men)", "")}</p>
-                        <p className="text-xs text-charcoal/50">{s.duration} min{s.price ? ` · $${s.price}` : ""}</p>
-                      </button>
-                    ))}
+            <div className="space-y-3">
+              {serviceGroups.map((group) => {
+                const isOpen = openGroup === group.key;
+                const selectedInGroup = group.items.find((s) => s.id === form.serviceId);
+                return (
+                  <div key={group.key} className={`rounded-xl border-2 overflow-hidden transition-colors ${isOpen || selectedInGroup ? "border-charcoal" : "border-sand"} bg-cream-soft`}>
+                    <button type="button"
+                      onClick={() => setOpenGroup(isOpen ? null : group.key)}
+                      className="w-full flex items-center justify-between px-4 py-4 text-left">
+                      <div>
+                        <p className="font-heading text-lg font-medium text-charcoal">{group.label}</p>
+                        {selectedInGroup ? (
+                          <p className="text-xs text-taupe mt-0.5">
+                            ✓ {selectedInGroup.name.replace(" (Women)", "").replace(" (Men)", "")}
+                            {selectedInGroup.price ? ` · $${selectedInGroup.price}` : ""}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-charcoal/40 mt-0.5">{group.items.length} services</p>
+                        )}
+                      </div>
+                      <ChevronDown className={`w-5 h-5 text-charcoal/40 flex-shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                    </button>
+                    {isOpen && (
+                      <div className="grid grid-cols-2 gap-2 p-3 pt-0">
+                        {group.items.map((s) => (
+                          <button key={s.id} type="button"
+                            onClick={() => setForm({ ...form, serviceId: s.id, time: "" })}
+                            className={`p-3 rounded-lg border-2 text-left transition-all ${form.serviceId === s.id ? "border-charcoal bg-sand/40" : "border-sand bg-cream hover:border-taupe"}`}>
+                            <p className="font-medium text-charcoal text-sm">{s.name.replace(" (Women)", "").replace(" (Men)", "")}</p>
+                            <p className="text-xs text-charcoal/50">{s.duration} min{s.price ? ` · $${s.price}` : ""}</p>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
