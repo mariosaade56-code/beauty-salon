@@ -20,7 +20,7 @@ function BookingForm() {
   const [services, setServices] = useState<Service[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [slots, setSlots] = useState<Slot[]>([]);
-  const [staffSelectionEnabled, setStaffSelectionEnabled] = useState(true);
+  const [staffSelectionEnabled, setStaffSelectionEnabled] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [form, setForm] = useState({
     serviceId: "", staffId: "", time: "", slotStaffId: "",
@@ -33,7 +33,8 @@ function BookingForm() {
     fetch("/api/services").then((r) => r.json()).then(setServices);
     fetch("/api/staff").then((r) => r.json()).then(setStaff);
     fetch("/api/settings").then((r) => r.json()).then((s) => {
-      setStaffSelectionEnabled(s.staff_selection_enabled !== "false");
+      // Hidden unless the admin explicitly turns it on
+      setStaffSelectionEnabled(s.staff_selection_enabled === "true");
     });
   }, []);
 

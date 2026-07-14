@@ -28,7 +28,7 @@ export async function getAvailableSlots(
   const staffSelectionSetting = await prisma.setting.findUnique({
     where: { key: "staff_selection_enabled" },
   });
-  const staffSelectionEnabled = staffSelectionSetting?.value !== "false";
+  const staffSelectionEnabled = staffSelectionSetting?.value === "true";
 
   // Get applicable staff
   const staffList = await prisma.staff.findMany({

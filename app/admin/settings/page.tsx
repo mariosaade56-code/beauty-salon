@@ -101,7 +101,7 @@ export default function SettingsPage() {
               <p className="text-sm text-gray-500">Allow clients to choose a specific staff member when booking</p>
             </div>
             <Toggle
-              value={settings.staff_selection_enabled !== "false"}
+              value={settings.staff_selection_enabled === "true"}
               onChange={(v) => set("staff_selection_enabled", v ? "true" : "false")}
             />
           </div>
