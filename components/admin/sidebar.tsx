@@ -25,6 +25,7 @@ const adminNavItems = [
 const staffNavItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/appointments", label: "Appointments", icon: Calendar },
+  { href: "/admin/clients", label: "Clients", icon: Users },
 ];
 
 export default function AdminSidebar() {

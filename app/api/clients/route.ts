@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, requireAuth } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
-  await requireAdmin();
+  await requireAuth(); // workers can view and search clients
   const { searchParams } = new URL(req.url);
   const search = searchParams.get("search") || "";
 
@@ -31,10 +31,13 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  await requireAdmin();
+  const user = await requireAuth(); // workers can add new clients
   const body = await req.json();
-  // Bulk import support
+  // Bulk import support (admin only)
   if (Array.isArray(body)) {
+    if (user.role !== "ADMIN") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+    }
     const results = await Promise.allSettled(
       body.map((c) =>
         prisma.client.upsert({
