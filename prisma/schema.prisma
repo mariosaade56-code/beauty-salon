@@ -15,6 +15,7 @@ model User {
   email        String    @unique
   passwordHash String?
   role         Role      @default(STAFF)
+  isActive     Boolean   @default(true)
   staffProfile Staff?
   sessions     Session[]
   createdAt    DateTime  @default(now())

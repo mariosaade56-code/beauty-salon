@@ -13,7 +13,7 @@ interface Staff {
   phone: string | null;
   color: string;
   isActive: boolean;
-  user: { email: string } | null;
+  user: { email: string; role: string; isActive: boolean } | null;
 }
 
 const COLORS = ["#ec4899", "#8b5cf6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#6366f1", "#84cc16"];
@@ -25,6 +25,19 @@ export default function StaffPage() {
   const [accountFor, setAccountFor] = useState<string | null>(null);
   const [accountForm, setAccountForm] = useState({ email: "", password: "" });
   const [accountMsg, setAccountMsg] = useState("");
+
+  async function updateAccount(staffId: string, patch: { role?: string; isActive?: boolean }) {
+    const res = await fetch(`/api/staff/${staffId}/account`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      alert(data.error || "Something went wrong");
+    }
+    load();
+  }
 
   async function saveAccount(e: React.FormEvent, staffId: string) {
     e.preventDefault();
@@ -157,7 +170,27 @@ export default function StaffPage() {
               </div>
 
               {s.user && accountFor !== s.id && (
-                <p className="text-xs text-gray-400 mt-2">Login: {s.user.email}</p>
+                <div className="mt-3 border-t border-gray-100 pt-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-gray-400 truncate mr-2">Login: {s.user.email}</p>
+                    <div className="flex gap-1 flex-shrink-0">
+                      <Badge variant="outline">{s.user.role === "ADMIN" ? "Admin" : "Staff"}</Badge>
+                      <Badge variant={s.user.isActive ? "success" : "destructive"}>
+                        {s.user.isActive ? "Enabled" : "Disabled"}
+                      </Badge>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" className="flex-1"
+                      onClick={() => updateAccount(s.id, { role: s.user!.role === "ADMIN" ? "STAFF" : "ADMIN" })}>
+                      {s.user.role === "ADMIN" ? "Remove Admin" : "Make Admin"}
+                    </Button>
+                    <Button variant="outline" size="sm" className="flex-1"
+                      onClick={() => updateAccount(s.id, { isActive: !s.user!.isActive })}>
+                      {s.user.isActive ? "Disable Login" : "Enable Login"}
+                    </Button>
+                  </div>
+                </div>
               )}
 
               {accountFor === s.id && (

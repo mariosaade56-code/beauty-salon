@@ -17,7 +17,7 @@ export async function GET() {
 
   const staff = await prisma.staff.findMany({
     where: { isActive: true },
-    include: { user: { select: { email: true } } },
+    include: { user: { select: { email: true, role: true, isActive: true } } },
     orderBy: { name: "asc" },
   });
   return NextResponse.json(staff);

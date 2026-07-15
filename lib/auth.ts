@@ -33,6 +33,9 @@ export async function getSession() {
 
   if (!session || session.expiresAt < new Date()) return null;
 
+  // Disabled accounts lose access immediately, even with a live session
+  if (!session.user.isActive) return null;
+
   if (session.user.role === "ADMIN") {
     const idleMs = Date.now() - session.lastActiveAt.getTime();
     if (idleMs > ADMIN_IDLE_TIMEOUT_MS) {

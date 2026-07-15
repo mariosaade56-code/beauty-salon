@@ -16,6 +16,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
 
+  if (!user.isActive) {
+    return NextResponse.json({ error: "This account has been disabled" }, { status: 403 });
+  }
+
   const token = await createSession(user.id);
   const cookieStore = await cookies();
   cookieStore.set("session", token, {
