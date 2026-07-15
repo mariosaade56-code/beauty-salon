@@ -5,12 +5,14 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const date = searchParams.get("date");
   const serviceId = searchParams.get("serviceId");
+  const serviceIds = searchParams.get("serviceIds"); // comma-separated, for multi-service bookings
   const staffId = searchParams.get("staffId") || undefined;
 
-  if (!date || !serviceId) {
+  if (!date || (!serviceId && !serviceIds)) {
     return NextResponse.json({ error: "Missing params" }, { status: 400 });
   }
 
-  const slots = await getAvailableSlots(new Date(date), serviceId, staffId);
+  const ids = serviceIds ? serviceIds.split(",").filter(Boolean) : serviceId!;
+  const slots = await getAvailableSlots(new Date(date), ids, staffId);
   return NextResponse.json(slots);
 }

@@ -6,11 +6,14 @@ export const SLOT_INTERVAL = 30; // minutes
 
 export async function getAvailableSlots(
   date: Date,
-  serviceId: string,
+  serviceIdOrIds: string | string[],
   staffId?: string
 ): Promise<{ time: string; staffId: string; staffName: string }[]> {
-  const service = await prisma.service.findUnique({ where: { id: serviceId } });
-  if (!service) return [];
+  // Multiple services are booked back-to-back: the slot must fit the total duration
+  const ids = Array.isArray(serviceIdOrIds) ? serviceIdOrIds : [serviceIdOrIds];
+  const servicesFound = await prisma.service.findMany({ where: { id: { in: ids } } });
+  if (servicesFound.length !== ids.length || ids.length === 0) return [];
+  const service = { duration: servicesFound.reduce((sum, s) => sum + s.duration, 0) };
 
   // Check salon closure
   const dayOff = await prisma.dayOff.findFirst({

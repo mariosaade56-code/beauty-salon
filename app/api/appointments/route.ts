@@ -38,8 +38,54 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { clientName, phone, email, staffId, startTime, notes, source, packageId } = body;
+  const { clientName, phone, email, staffId, startTime, notes, source, packageId, serviceIds } = body;
   let { serviceId } = body;
+
+  // Multi-service booking: create consecutive appointments with the same staff
+  if (Array.isArray(serviceIds) && serviceIds.length > 1) {
+    const found = await prisma.service.findMany({ where: { id: { in: serviceIds } } });
+    if (found.length !== serviceIds.length) {
+      return NextResponse.json({ error: "Service not found" }, { status: 400 });
+    }
+    const byId = Object.fromEntries(found.map((s) => [s.id, s]));
+
+    let client = await prisma.client.findUnique({ where: { phone } });
+    if (!client) {
+      client = await prisma.client.create({ data: { name: clientName, phone, email } });
+    }
+
+    const created = [];
+    let cursor = new Date(startTime);
+    for (const id of serviceIds) {
+      const svc = byId[id];
+      const end = new Date(cursor.getTime() + svc.duration * 60000);
+      created.push(
+        await prisma.appointment.create({
+          data: {
+            clientId: client.id,
+            serviceId: id,
+            staffId: staffId || null,
+            startTime: cursor,
+            endTime: end,
+            status: "CONFIRMED",
+            source: source || "WEBSITE",
+            notes,
+          },
+          include: { client: true, service: true, staff: true },
+        })
+      );
+      cursor = end;
+    }
+
+    const first = created[0];
+    const list = created.map((a) => `💅 ${a.service.name}`).join("\n");
+    const confirmMsg = `✅ Appointment Confirmed!\n\nHi ${client.name}! Your booking is set:\n\n${list}\n👤 ${first.staff?.name || "Any available staff"}\n📅 ${format(first.startTime, "EEEE, MMMM d, yyyy")}\n⏰ ${format(first.startTime, "h:mm a")}\n\nSee you soon! 💕`;
+    await sendWhatsAppMessage(phone, confirmMsg).catch(console.error);
+
+    return NextResponse.json({ appointments: created });
+  }
+
+  if (Array.isArray(serviceIds) && serviceIds.length === 1) serviceId = serviceIds[0];
 
   // If booking against a package, the service comes from the package
   const pkg = packageId ? await prisma.package.findUnique({ where: { id: packageId } }) : null;

@@ -23,9 +23,15 @@ function BookingForm() {
   const [staffSelectionEnabled, setStaffSelectionEnabled] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [form, setForm] = useState({
-    serviceId: "", staffId: "", time: "", slotStaffId: "",
+    staffId: "", time: "", slotStaffId: "",
     clientName: "", phone: "", email: "",
   });
+  const [selected, setSelected] = useState<string[]>([]);
+
+  function toggleService(id: string) {
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    setForm((f) => ({ ...f, time: "" }));
+  }
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [openGroup, setOpenGroup] = useState<string | null>(null);
@@ -57,15 +63,17 @@ function BookingForm() {
   }, [searchParams, services]);
 
   useEffect(() => {
-    if (form.serviceId) {
+    if (selected.length > 0) {
       const params = new URLSearchParams({
-        serviceId: form.serviceId,
+        serviceIds: selected.join(","),
         date: format(selectedDate, "yyyy-MM-dd"),
       });
       if (form.staffId) params.set("staffId", form.staffId);
-      fetch(`/api/availability?${params}`).then((r) => r.json()).then(setSlots);
+      fetch(`/api/availability?${params}`).then((r) => r.json()).then((d) => setSlots(Array.isArray(d) ? d : []));
+    } else {
+      setSlots([]);
     }
-  }, [form.serviceId, form.staffId, selectedDate]);
+  }, [selected, form.staffId, selectedDate]);
 
   async function submit() {
     setSubmitting(true);
@@ -76,7 +84,7 @@ function BookingForm() {
         clientName: form.clientName,
         phone: form.phone,
         email: form.email,
-        serviceId: form.serviceId,
+        serviceIds: selected,
         staffId: form.slotStaffId || null,
         startTime: `${format(selectedDate, "yyyy-MM-dd")}T${form.time}:00`,
         source: "WEBSITE",
@@ -102,7 +110,10 @@ function BookingForm() {
     );
   }
 
-  const selectedService = services.find((s) => s.id === form.serviceId);
+  const selectedServices = services.filter((s) => selected.includes(s.id));
+  const totalPrice = selectedServices.reduce((sum, s) => sum + (s.price || 0), 0);
+  const totalDuration = selectedServices.reduce((sum, s) => sum + s.duration, 0);
+  const cleanName = (n: string) => n.replace(" (Women)", "").replace(" (Men)", "");
 
   return (
     <div className="max-w-lg mx-auto">
@@ -122,22 +133,21 @@ function BookingForm() {
       {step === 1 && (
         <div className="space-y-6">
           <div>
-            <label className="block text-sm font-medium text-charcoal/70 mb-2">Service *</label>
+            <label className="block text-sm font-medium text-charcoal/70 mb-2">Services * <span className="font-normal text-charcoal/40">(you can pick more than one)</span></label>
             <div className="space-y-3">
               {serviceGroups.map((group) => {
                 const isOpen = openGroup === group.key;
-                const selectedInGroup = group.items.find((s) => s.id === form.serviceId);
+                const selectedInGroup = group.items.filter((s) => selected.includes(s.id));
                 return (
-                  <div key={group.key} className={`rounded-xl border-2 overflow-hidden transition-colors ${isOpen || selectedInGroup ? "border-charcoal" : "border-sand"} bg-cream-soft`}>
+                  <div key={group.key} className={`rounded-xl border-2 overflow-hidden transition-colors ${isOpen || selectedInGroup.length ? "border-charcoal" : "border-sand"} bg-cream-soft`}>
                     <button type="button"
                       onClick={() => setOpenGroup(isOpen ? null : group.key)}
                       className="w-full flex items-center justify-between px-4 py-4 text-left">
                       <div>
                         <p className="font-heading text-lg font-medium text-charcoal">{group.label}</p>
-                        {selectedInGroup ? (
+                        {selectedInGroup.length > 0 ? (
                           <p className="text-xs text-taupe mt-0.5">
-                            ✓ {selectedInGroup.name.replace(" (Women)", "").replace(" (Men)", "")}
-                            {selectedInGroup.price ? ` · $${selectedInGroup.price}` : ""}
+                            ✓ {selectedInGroup.map((s) => cleanName(s.name)).join(", ")}
                           </p>
                         ) : (
                           <p className="text-xs text-charcoal/40 mt-0.5">{group.items.length} services</p>
@@ -147,14 +157,17 @@ function BookingForm() {
                     </button>
                     {isOpen && (
                       <div className="grid grid-cols-2 gap-2 p-3 pt-0">
-                        {group.items.map((s) => (
-                          <button key={s.id} type="button"
-                            onClick={() => setForm({ ...form, serviceId: s.id, time: "" })}
-                            className={`p-3 rounded-lg border-2 text-left transition-all ${form.serviceId === s.id ? "border-charcoal bg-sand/40" : "border-sand bg-cream hover:border-taupe"}`}>
-                            <p className="font-medium text-charcoal text-sm">{s.name.replace(" (Women)", "").replace(" (Men)", "")}</p>
-                            <p className="text-xs text-charcoal/50">{s.duration} min{s.price ? ` · $${s.price}` : ""}</p>
-                          </button>
-                        ))}
+                        {group.items.map((s) => {
+                          const isSelected = selected.includes(s.id);
+                          return (
+                            <button key={s.id} type="button"
+                              onClick={() => toggleService(s.id)}
+                              className={`p-3 rounded-lg border-2 text-left transition-all ${isSelected ? "border-charcoal bg-sand/40" : "border-sand bg-cream hover:border-taupe"}`}>
+                              <p className="font-medium text-charcoal text-sm">{isSelected ? "✓ " : ""}{cleanName(s.name)}</p>
+                              <p className="text-xs text-charcoal/50">{s.duration} min{s.price ? ` · $${s.price}` : ""}</p>
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -163,7 +176,16 @@ function BookingForm() {
             </div>
           </div>
 
-          {staffSelectionEnabled && form.serviceId && (
+          {selectedServices.length > 0 && (
+            <div className="bg-sand/50 border border-sand rounded-xl px-4 py-3 flex items-center justify-between">
+              <p className="text-sm text-charcoal">
+                {selectedServices.length} service{selectedServices.length > 1 ? "s" : ""} · {totalDuration} min
+              </p>
+              <p className="font-semibold text-charcoal">${totalPrice}</p>
+            </div>
+          )}
+
+          {staffSelectionEnabled && selected.length > 0 && (
             <div>
               <label className="block text-sm font-medium text-charcoal/70 mb-2">Staff (optional)</label>
               <div className="flex gap-2 flex-wrap">
@@ -182,7 +204,7 @@ function BookingForm() {
             </div>
           )}
 
-          {form.serviceId && (
+          {selected.length > 0 && (
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-sm font-medium text-charcoal/70">Date</label>
@@ -212,7 +234,7 @@ function BookingForm() {
             </div>
           )}
 
-          <Button className="w-full bg-charcoal text-cream hover:bg-black rounded-full h-12" disabled={!form.serviceId || !form.time} onClick={() => setStep(2)}>
+          <Button className="w-full bg-charcoal text-cream hover:bg-black rounded-full h-12" disabled={selected.length === 0 || !form.time} onClick={() => setStep(2)}>
             Continue
           </Button>
         </div>
@@ -221,8 +243,13 @@ function BookingForm() {
       {step === 2 && (
         <div className="space-y-4">
           <div className="bg-sand/50 border border-sand rounded-xl p-4 mb-4">
-            <p className="font-heading text-lg font-medium text-charcoal">{selectedService?.name}</p>
-            <p className="text-sm text-taupe">{format(selectedDate, "EEEE, MMMM d")} at {form.time}</p>
+            {selectedServices.map((s) => (
+              <div key={s.id} className="flex items-center justify-between">
+                <p className="font-heading text-lg font-medium text-charcoal">{cleanName(s.name)}</p>
+                {s.price && <p className="text-sm text-charcoal/60">${s.price}</p>}
+              </div>
+            ))}
+            <p className="text-sm text-taupe mt-1.5">{format(selectedDate, "EEEE, MMMM d")} at {form.time} · {totalDuration} min{totalPrice ? ` · $${totalPrice} total` : ""}</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-charcoal/70 mb-1">Full Name *</label>
