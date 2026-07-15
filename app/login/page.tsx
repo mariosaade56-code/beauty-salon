@@ -44,8 +44,8 @@ export default function LoginPage() {
 
         <form onSubmit={submit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-black mb-1">Email</label>
-            <Input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="admin@salon.com" />
+            <label className="block text-sm font-medium text-black mb-1">Username or Email</label>
+            <Input type="text" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="username" autoComplete="username" />
           </div>
           <div>
             <label className="block text-sm font-medium text-black mb-1">Password</label>

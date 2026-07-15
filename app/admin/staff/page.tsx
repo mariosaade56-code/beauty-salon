@@ -195,7 +195,7 @@ export default function StaffPage() {
 
               {accountFor === s.id && (
                 <form onSubmit={(e) => saveAccount(e, s.id)} className="mt-3 space-y-2 border-t border-gray-100 pt-3">
-                  <Input required type="email" placeholder="Login email"
+                  <Input required type="text" placeholder="Login username or email"
                     value={accountForm.email}
                     onChange={(e) => setAccountForm({ ...accountForm, email: e.target.value })} />
                   <Input required type="text" placeholder={s.user ? "New password" : "Password"}
