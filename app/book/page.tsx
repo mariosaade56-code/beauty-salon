@@ -9,7 +9,7 @@ import { CheckCircle, ChevronLeft, ChevronRight, ChevronDown } from "lucide-reac
 import Link from "next/link";
 import Butterfly from "@/components/butterfly";
 
-interface Service { id: string; name: string; category: string; duration: number; price: number | null; }
+interface Service { id: string; name: string; category: string; duration: number; price: number | null; description: string | null; }
 interface Staff { id: string; name: string; color: string; }
 interface Slot { time: string; staffId: string; staffName: string; }
 interface Pkg { id: string; name: string; price: number; sessionCount: number; serviceId: string; service: { name: string; duration: number }; }
@@ -50,7 +50,8 @@ function BookingForm() {
   const serviceGroups = [
     { key: "skincare", label: "Skincare", items: services.filter((s) => s.category === "skincare") },
     { key: "cellulite", label: "Cellulite Treatment", items: services.filter((s) => s.category === "cellulite") },
-    { key: "laser-women", label: "Laser Hair Removal — Women", items: services.filter((s) => s.category === "laser" && !s.name.includes("(Men)")) },
+    { key: "ultimate", label: "Ultimate Full Body", items: services.filter((s) => s.name.includes("Ultimate Full Body")) },
+    { key: "laser-women", label: "Laser Hair Removal — Women", items: services.filter((s) => s.category === "laser" && !s.name.includes("(Men)") && !s.name.includes("Ultimate Full Body")) },
     { key: "laser-men", label: "Laser Hair Removal — Men", items: services.filter((s) => s.category === "laser" && s.name.includes("(Men)")) },
     { key: "other", label: "Other", items: services.filter((s) => !["skincare", "cellulite", "laser"].includes(s.category)) },
   ].filter((g) => g.items.length > 0);
@@ -204,7 +205,7 @@ function BookingForm() {
                             ✓ {selectedInGroup.map((s) => cleanName(s.name)).join(", ")}
                           </p>
                         ) : (
-                          <p className="text-xs text-charcoal/40 mt-0.5">{group.items.length} services</p>
+                          <p className="text-xs text-charcoal/40 mt-0.5">{group.items.length} service{group.items.length !== 1 ? "s" : ""}</p>
                         )}
                       </div>
                       <ChevronDown className={`w-5 h-5 text-charcoal/40 flex-shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`} />
@@ -216,9 +217,10 @@ function BookingForm() {
                           return (
                             <button key={s.id} type="button"
                               onClick={() => toggleService(s.id)}
-                              className={`p-3 rounded-lg border-2 text-left transition-all ${isSelected ? "border-charcoal bg-sand/40" : "border-sand bg-cream hover:border-taupe"}`}>
+                              className={`p-3 rounded-lg border-2 text-left transition-all ${isSelected ? "border-charcoal bg-sand/40" : "border-sand bg-cream hover:border-taupe"} ${group.items.length === 1 ? "col-span-2" : ""}`}>
                               <p className="font-medium text-charcoal text-sm">{isSelected ? "✓ " : ""}{cleanName(s.name)}</p>
                               <p className="text-xs text-charcoal/50">{s.duration} min{s.price ? ` · $${s.price}` : ""}</p>
+                              {s.description && <p className="text-xs text-charcoal/40 mt-1">{s.description}</p>}
                             </button>
                           );
                         })}
