@@ -1,8 +1,28 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, getSession } from "@/lib/auth";
 
 export async function GET() {
+  const user = await getSession();
+
+  // Public (booking page): only active packages, no client data
+  if (!user) {
+    const packages = await prisma.package.findMany({
+      where: { isActive: true },
+      select: {
+        id: true,
+        name: true,
+        price: true,
+        sessionCount: true,
+        validityDays: true,
+        serviceId: true,
+        service: { select: { name: true, duration: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    return NextResponse.json(packages);
+  }
+
   const packages = await prisma.package.findMany({
     include: {
       service: { select: { name: true, category: true } },

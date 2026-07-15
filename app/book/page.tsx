@@ -12,6 +12,7 @@ import Butterfly from "@/components/butterfly";
 interface Service { id: string; name: string; category: string; duration: number; price: number | null; }
 interface Staff { id: string; name: string; color: string; }
 interface Slot { time: string; staffId: string; staffName: string; }
+interface Pkg { id: string; name: string; price: number; sessionCount: number; serviceId: string; service: { name: string; duration: number }; }
 
 function BookingForm() {
   const searchParams = useSearchParams();
@@ -27,9 +28,19 @@ function BookingForm() {
     clientName: "", phone: "", email: "",
   });
   const [selected, setSelected] = useState<string[]>([]);
+  const [packages, setPackages] = useState<Pkg[]>([]);
+  const [selectedPkg, setSelectedPkg] = useState<string | null>(null);
 
   function toggleService(id: string) {
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    setSelectedPkg(null);
+    setForm((f) => ({ ...f, time: "" }));
+  }
+
+  // A package books on its own (one session of its service)
+  function togglePackage(id: string) {
+    setSelectedPkg((prev) => (prev === id ? null : id));
+    setSelected([]);
     setForm((f) => ({ ...f, time: "" }));
   }
   const [submitting, setSubmitting] = useState(false);
@@ -46,6 +57,7 @@ function BookingForm() {
 
   useEffect(() => {
     fetch("/api/services").then((r) => r.json()).then(setServices);
+    fetch("/api/packages").then((r) => r.json()).then((d) => setPackages(Array.isArray(d) ? d : []));
     fetch("/api/staff").then((r) => r.json()).then(setStaff);
     fetch("/api/settings").then((r) => r.json()).then((s) => {
       // Hidden unless the admin explicitly turns it on
@@ -62,10 +74,13 @@ function BookingForm() {
     }
   }, [searchParams, services]);
 
+  const activePkg = packages.find((p) => p.id === selectedPkg) || null;
+  const bookingServiceIds = activePkg ? [activePkg.serviceId] : selected;
+
   useEffect(() => {
-    if (selected.length > 0) {
+    if (bookingServiceIds.length > 0) {
       const params = new URLSearchParams({
-        serviceIds: selected.join(","),
+        serviceIds: bookingServiceIds.join(","),
         date: format(selectedDate, "yyyy-MM-dd"),
       });
       if (form.staffId) params.set("staffId", form.staffId);
@@ -73,22 +88,27 @@ function BookingForm() {
     } else {
       setSlots([]);
     }
-  }, [selected, form.staffId, selectedDate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, selectedPkg, form.staffId, selectedDate]);
 
   async function submit() {
     setSubmitting(true);
+    const base = {
+      clientName: form.clientName,
+      phone: form.phone,
+      email: form.email,
+      staffId: form.slotStaffId || null,
+      startTime: `${format(selectedDate, "yyyy-MM-dd")}T${form.time}:00`,
+      source: "WEBSITE",
+    };
     await fetch("/api/appointments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        clientName: form.clientName,
-        phone: form.phone,
-        email: form.email,
-        serviceIds: selected,
-        staffId: form.slotStaffId || null,
-        startTime: `${format(selectedDate, "yyyy-MM-dd")}T${form.time}:00`,
-        source: "WEBSITE",
-      }),
+      body: JSON.stringify(
+        activePkg
+          ? { ...base, serviceId: activePkg.serviceId, packageId: activePkg.id }
+          : { ...base, serviceIds: selected }
+      ),
     });
     setSubmitting(false);
     setDone(true);
@@ -111,8 +131,8 @@ function BookingForm() {
   }
 
   const selectedServices = services.filter((s) => selected.includes(s.id));
-  const totalPrice = selectedServices.reduce((sum, s) => sum + (s.price || 0), 0);
-  const totalDuration = selectedServices.reduce((sum, s) => sum + s.duration, 0);
+  const totalPrice = activePkg ? activePkg.price : selectedServices.reduce((sum, s) => sum + (s.price || 0), 0);
+  const totalDuration = activePkg ? activePkg.service.duration : selectedServices.reduce((sum, s) => sum + s.duration, 0);
   const cleanName = (n: string) => n.replace(" (Women)", "").replace(" (Men)", "");
 
   return (
@@ -135,6 +155,40 @@ function BookingForm() {
           <div>
             <label className="block text-sm font-medium text-charcoal/70 mb-2">Services * <span className="font-normal text-charcoal/40">(you can pick more than one)</span></label>
             <div className="space-y-3">
+              {packages.length > 0 && (
+                <div className={`rounded-xl border-2 overflow-hidden transition-colors ${openGroup === "packages" || activePkg ? "border-charcoal" : "border-sand"} bg-cream-soft`}>
+                  <button type="button"
+                    onClick={() => setOpenGroup(openGroup === "packages" ? null : "packages")}
+                    className="w-full flex items-center justify-between px-4 py-4 text-left">
+                    <div>
+                      <p className="font-heading text-lg font-medium text-charcoal">✨ Packages & Offers</p>
+                      {activePkg ? (
+                        <p className="text-xs text-taupe mt-0.5">✓ {activePkg.name}</p>
+                      ) : (
+                        <p className="text-xs text-charcoal/40 mt-0.5">{packages.length} offer{packages.length > 1 ? "s" : ""}</p>
+                      )}
+                    </div>
+                    <ChevronDown className={`w-5 h-5 text-charcoal/40 flex-shrink-0 transition-transform ${openGroup === "packages" ? "rotate-180" : ""}`} />
+                  </button>
+                  {openGroup === "packages" && (
+                    <div className="grid grid-cols-1 gap-2 p-3 pt-0">
+                      {packages.map((p) => {
+                        const isSelected = selectedPkg === p.id;
+                        return (
+                          <button key={p.id} type="button"
+                            onClick={() => togglePackage(p.id)}
+                            className={`p-3 rounded-lg border-2 text-left transition-all ${isSelected ? "border-charcoal bg-sand/40" : "border-sand bg-cream hover:border-taupe"}`}>
+                            <p className="font-medium text-charcoal text-sm">{isSelected ? "✓ " : ""}{p.name}</p>
+                            <p className="text-xs text-charcoal/50">
+                              {p.sessionCount} sessions of {p.service.name} · ${p.price} — first session booked now
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
               {serviceGroups.map((group) => {
                 const isOpen = openGroup === group.key;
                 const selectedInGroup = group.items.filter((s) => selected.includes(s.id));
@@ -176,16 +230,18 @@ function BookingForm() {
             </div>
           </div>
 
-          {selectedServices.length > 0 && (
+          {(selectedServices.length > 0 || activePkg) && (
             <div className="bg-sand/50 border border-sand rounded-xl px-4 py-3 flex items-center justify-between">
               <p className="text-sm text-charcoal">
-                {selectedServices.length} service{selectedServices.length > 1 ? "s" : ""} · {totalDuration} min
+                {activePkg
+                  ? `${activePkg.name} · session of ${totalDuration} min`
+                  : `${selectedServices.length} service${selectedServices.length > 1 ? "s" : ""} · ${totalDuration} min`}
               </p>
               <p className="font-semibold text-charcoal">${totalPrice}</p>
             </div>
           )}
 
-          {staffSelectionEnabled && selected.length > 0 && (
+          {staffSelectionEnabled && bookingServiceIds.length > 0 && (
             <div>
               <label className="block text-sm font-medium text-charcoal/70 mb-2">Staff (optional)</label>
               <div className="flex gap-2 flex-wrap">
@@ -204,7 +260,7 @@ function BookingForm() {
             </div>
           )}
 
-          {selected.length > 0 && (
+          {bookingServiceIds.length > 0 && (
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-sm font-medium text-charcoal/70">Date</label>
@@ -234,7 +290,7 @@ function BookingForm() {
             </div>
           )}
 
-          <Button className="w-full bg-charcoal text-cream hover:bg-black rounded-full h-12" disabled={selected.length === 0 || !form.time} onClick={() => setStep(2)}>
+          <Button className="w-full bg-charcoal text-cream hover:bg-black rounded-full h-12" disabled={bookingServiceIds.length === 0 || !form.time} onClick={() => setStep(2)}>
             Continue
           </Button>
         </div>
@@ -243,12 +299,19 @@ function BookingForm() {
       {step === 2 && (
         <div className="space-y-4">
           <div className="bg-sand/50 border border-sand rounded-xl p-4 mb-4">
-            {selectedServices.map((s) => (
-              <div key={s.id} className="flex items-center justify-between">
-                <p className="font-heading text-lg font-medium text-charcoal">{cleanName(s.name)}</p>
-                {s.price && <p className="text-sm text-charcoal/60">${s.price}</p>}
+            {activePkg ? (
+              <div className="flex items-center justify-between">
+                <p className="font-heading text-lg font-medium text-charcoal">{activePkg.name}</p>
+                <p className="text-sm text-charcoal/60">${activePkg.price}</p>
               </div>
-            ))}
+            ) : (
+              selectedServices.map((s) => (
+                <div key={s.id} className="flex items-center justify-between">
+                  <p className="font-heading text-lg font-medium text-charcoal">{cleanName(s.name)}</p>
+                  {s.price && <p className="text-sm text-charcoal/60">${s.price}</p>}
+                </div>
+              ))
+            )}
             <p className="text-sm text-taupe mt-1.5">{format(selectedDate, "EEEE, MMMM d")} at {form.time} · {totalDuration} min{totalPrice ? ` · $${totalPrice} total` : ""}</p>
           </div>
           <div>
