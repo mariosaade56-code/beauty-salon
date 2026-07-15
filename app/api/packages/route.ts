@@ -2,11 +2,13 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdmin, getSession } from "@/lib/auth";
 
-export async function GET() {
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
   const user = await getSession();
 
-  // Public (booking page): only active packages, no client data
-  if (!user) {
+  // Public (booking page): only active packages, no client data.
+  // ?public=1 forces this view even when an admin is logged in.
+  if (!user || searchParams.get("public")) {
     const packages = await prisma.package.findMany({
       where: { isActive: true },
       select: {

@@ -57,7 +57,7 @@ function BookingForm() {
 
   useEffect(() => {
     fetch("/api/services").then((r) => r.json()).then(setServices);
-    fetch("/api/packages").then((r) => r.json()).then((d) => setPackages(Array.isArray(d) ? d : []));
+    fetch("/api/packages?public=1").then((r) => r.json()).then((d) => setPackages(Array.isArray(d) ? d : []));
     fetch("/api/staff").then((r) => r.json()).then(setStaff);
     fetch("/api/settings").then((r) => r.json()).then((s) => {
       // Hidden unless the admin explicitly turns it on
