@@ -23,9 +23,6 @@ export async function GET(req: NextRequest) {
   }
   if (status) where.status = status;
   if (staffId) where.staffId = staffId;
-  if (user.role === "STAFF" && user.staffProfile) {
-    where.staffId = user.staffProfile.id;
-  }
 
   const appointments = await prisma.appointment.findMany({
     where,

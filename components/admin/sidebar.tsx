@@ -23,7 +23,7 @@ const adminNavItems = [
 
 const staffNavItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/admin/appointments", label: "My Schedule", icon: Calendar },
+  { href: "/admin/appointments", label: "Appointments", icon: Calendar },
 ];
 
 export default function AdminSidebar() {
