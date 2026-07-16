@@ -9,6 +9,8 @@ import { X, UserCheck } from "lucide-react";
 interface Props {
   onClose: () => void;
   onCreated: () => void;
+  initialDate?: string; // yyyy-MM-dd — from clicking a calendar slot
+  initialTime?: string; // HH:mm
 }
 
 interface ClientSuggestion {
@@ -19,15 +21,16 @@ interface ClientSuggestion {
   _count: { appointments: number };
 }
 
-export default function NewAppointmentModal({ onClose, onCreated }: Props) {
+export default function NewAppointmentModal({ onClose, onCreated, initialDate, initialTime }: Props) {
   const [services, setServices] = useState<{ id: string; name: string; duration: number }[]>([]);
   const [packages, setPackages] = useState<{ id: string; name: string; serviceId: string; sessionCount: number; isActive: boolean }[]>([]);
   const [staff, setStaff] = useState<{ id: string; name: string }[]>([]);
   const [slots, setSlots] = useState<{ time: string; staffId: string; staffName: string }[]>([]);
   const [form, setForm] = useState({
     clientName: "", phone: "", email: "",
-    serviceId: "", staffId: "", date: format(new Date(), "yyyy-MM-dd"), time: "", notes: "",
+    serviceId: "", staffId: "", date: initialDate || format(new Date(), "yyyy-MM-dd"), time: "", notes: "",
   });
+  const appliedInitialTime = useRef(false);
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<ClientSuggestion[]>([]);
   const [suggestFor, setSuggestFor] = useState<"name" | "phone" | null>(null);
@@ -70,9 +73,17 @@ export default function NewAppointmentModal({ onClose, onCreated }: Props) {
     if (effectiveServiceId && form.date) {
       const params = new URLSearchParams({ serviceId: effectiveServiceId, date: form.date });
       if (form.staffId) params.set("staffId", form.staffId);
-      fetch(`/api/availability?${params}`).then((r) => r.json()).then(setSlots);
+      fetch(`/api/availability?${params}`).then((r) => r.json()).then((d) => setSlots(Array.isArray(d) ? d : []));
     }
   }, [effectiveServiceId, form.date, form.staffId]);
+
+  // Preselect the clicked calendar slot once availability arrives
+  useEffect(() => {
+    if (initialTime && !appliedInitialTime.current && slots.some((s) => s.time === initialTime)) {
+      appliedInitialTime.current = true;
+      setForm((f) => ({ ...f, time: initialTime }));
+    }
+  }, [slots, initialTime]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

@@ -10,11 +10,19 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const date = searchParams.get("date");
+  const from = searchParams.get("from");
+  const to = searchParams.get("to");
   const status = searchParams.get("status");
   const staffId = searchParams.get("staffId");
 
   const where: Record<string, unknown> = {};
-  if (date) {
+  if (from && to) {
+    // Range fetch (calendar week view); `to` is inclusive
+    where.startTime = {
+      gte: new Date(new Date(from).toDateString()),
+      lt: new Date(new Date(new Date(to).toDateString()).getTime() + 86400000),
+    };
+  } else if (date) {
     const d = new Date(date);
     where.startTime = {
       gte: new Date(d.toDateString()),
