@@ -2,8 +2,10 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { format } from "date-fns";
-import { Calendar, Users, DollarSign, TrendingUp, Clock } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns";
+import { Calendar, DollarSign, TrendingUp, Clock } from "lucide-react";
 import PaymentBadge from "@/components/payment-badge";
 
 interface Appointment {
@@ -19,12 +21,6 @@ interface Appointment {
   staff: { name: string } | null;
 }
 
-interface Stats {
-  total: number;
-  completed: number;
-  totalRevenue: number;
-}
-
 const statusColors: Record<string, "default" | "success" | "warning" | "destructive" | "outline"> = {
   CONFIRMED: "success",
   PENDING: "warning",
@@ -34,59 +30,98 @@ const statusColors: Record<string, "default" | "success" | "warning" | "destruct
 };
 
 export default function DashboardPage() {
-  const [todayAppts, setTodayAppts] = useState<Appointment[]>([]);
-  const [stats, setStats] = useState<Stats | null>(null);
+  const todayStr = format(new Date(), "yyyy-MM-dd");
+  const [from, setFrom] = useState(todayStr);
+  const [to, setTo] = useState(todayStr);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [role, setRole] = useState<string>("ADMIN");
-  const today = new Date();
 
   useEffect(() => {
-    const todayStr = format(today, "yyyy-MM-dd");
-    fetch(`/api/appointments?date=${todayStr}`)
-      .then((r) => r.json())
-      .then((d) => setTodayAppts(Array.isArray(d) ? d : []));
-
     fetch("/api/auth/me").then((r) => r.json()).then((u) => {
       if (u?.role) setRole(u.role);
-      if (u?.role !== "STAFF") {
-        fetch(`/api/reports?period=month`)
-          .then((r) => (r.ok ? r.json() : null))
-          .then((d) => setStats(d && typeof d.total === "number" ? d : null));
-      }
     });
   }, []);
 
-  const confirmed = todayAppts.filter((a) => a.status !== "CANCELLED");
+  useEffect(() => {
+    if (!from || !to) return;
+    const [a, b] = from <= to ? [from, to] : [to, from];
+    fetch(`/api/appointments?from=${a}&to=${b}`)
+      .then((r) => r.json())
+      .then((d) => setAppointments(Array.isArray(d) ? d : []));
+  }, [from, to]);
+
   const isStaff = role === "STAFF";
+  const singleDay = from === to;
+
+  const active = appointments
+    .filter((a) => a.status !== "CANCELLED")
+    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+  const pending = active.filter((a) => a.status === "PENDING").length;
+  const completed = active.filter((a) => a.status === "COMPLETED");
+  // Money actually collected: recorded payment if present, else full price
+  const revenue = completed.reduce(
+    (sum, a) => sum + (a.paymentStatus ? (a.amountPaid ?? 0) : (a.service.price || 0)),
+    0
+  );
+
+  function preset(f: Date, t: Date) {
+    setFrom(format(f, "yyyy-MM-dd"));
+    setTo(format(t, "yyyy-MM-dd"));
+  }
+
+  const now = new Date();
+  const subtitle = singleDay
+    ? format(new Date(from + "T00:00:00"), "EEEE, MMMM d, yyyy")
+    : `${format(new Date(from + "T00:00:00"), "MMM d")} – ${format(new Date(to + "T00:00:00"), "MMM d, yyyy")}`;
 
   return (
     <div className="p-4 md:p-6 space-y-4 md:space-y-6">
-      <div>
-        <h1 className="text-xl md:text-2xl font-bold text-gray-900">{isStaff ? "My Day" : "Dashboard"}</h1>
-        <p className="text-gray-500 text-sm mt-1">{format(today, "EEEE, MMMM d, yyyy")}</p>
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900">Dashboard</h1>
+          <p className="text-gray-500 text-sm mt-1">{subtitle}</p>
+        </div>
+        {/* Date filter */}
+        <div className="flex items-end gap-2 flex-wrap">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">From</label>
+            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-9" />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">To</label>
+            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-9" />
+          </div>
+          <div className="flex gap-1">
+            <Button variant="outline" size="sm" onClick={() => preset(now, now)}>Today</Button>
+            <Button variant="outline" size="sm" onClick={() => preset(startOfWeek(now, { weekStartsOn: 1 }), endOfWeek(now, { weekStartsOn: 1 }))}>Week</Button>
+            <Button variant="outline" size="sm" onClick={() => preset(startOfMonth(now), endOfMonth(now))}>Month</Button>
+          </div>
+        </div>
       </div>
 
-      {/* Stats */}
+      {/* Stats — strictly for the chosen period */}
       <div className={`grid grid-cols-2 ${isStaff ? "" : "md:grid-cols-4"} gap-3 md:gap-4`}>
-        <StatCard icon={Calendar} label="Today" value={confirmed.length} color="pink" />
-        <StatCard icon={Clock} label="Pending" value={todayAppts.filter((a) => a.status === "PENDING").length} color="yellow" />
-        {!isStaff && <StatCard icon={TrendingUp} label="Completed" value={stats?.completed || 0} color="green" />}
-        {!isStaff && <StatCard icon={DollarSign} label="Revenue" value={`$${(stats?.totalRevenue || 0).toFixed(0)}`} color="purple" />}
+        <StatCard icon={Calendar} label="Appointments" value={active.length} color="pink" />
+        <StatCard icon={Clock} label="Pending" value={pending} color="yellow" />
+        {!isStaff && <StatCard icon={TrendingUp} label="Completed" value={completed.length} color="green" />}
+        {!isStaff && <StatCard icon={DollarSign} label="Revenue" value={`$${revenue.toFixed(0)}`} color="purple" />}
       </div>
 
-      {/* Today's Schedule */}
+      {/* Schedule */}
       <Card>
         <CardHeader>
-          <CardTitle>Today&apos;s Schedule</CardTitle>
+          <CardTitle>{singleDay ? "Schedule" : "Appointments in this period"}</CardTitle>
         </CardHeader>
         <CardContent>
-          {confirmed.length === 0 ? (
-            <p className="text-gray-400 text-sm py-8 text-center">No appointments today</p>
+          {active.length === 0 ? (
+            <p className="text-gray-400 text-sm py-8 text-center">No appointments for this period</p>
           ) : (
             <div className="space-y-3">
-              {confirmed.map((appt) => (
+              {active.map((appt) => (
                 <div key={appt.id} className="flex items-center justify-between p-3 md:p-4 rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors">
                   <div className="flex items-center gap-3">
-                    <div className="text-center min-w-[50px]">
+                    <div className="text-center min-w-[56px]">
+                      {!singleDay && <p className="text-xs text-gray-400">{format(new Date(appt.startTime), "EEE d/M")}</p>}
                       <p className="font-semibold text-gray-900 text-sm">{format(new Date(appt.startTime), "h:mm")}</p>
                       <p className="text-xs text-gray-400">{format(new Date(appt.startTime), "a")}</p>
                     </div>
