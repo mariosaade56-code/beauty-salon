@@ -212,6 +212,17 @@ model DayOff {
   createdAt DateTime @default(now())
 }
 
+// ─── Expenses ─────────────────────────────────────────────────────────────────
+
+model Expense {
+  id          String   @id @default(cuid())
+  date        DateTime @default(now())
+  category    String
+  description String?
+  amount      Float
+  createdAt   DateTime @default(now())
+}
+
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
 model Setting {

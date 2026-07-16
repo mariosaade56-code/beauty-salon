@@ -18,7 +18,6 @@ interface Photo { id: string; url: string; type: string; notes: string | null; t
 interface Client { id: string; name: string; phone: string; email: string | null; notes: string | null; dob: string | null; address: string | null; createdAt: string; }
 interface Transaction { id: string; date: string; description: string; amount: number; paid: boolean; reference: string | null; }
 
-const PHOTO_TYPES = ["BEFORE", "AFTER", "GENERAL"];
 
 export default function ClientDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -36,7 +35,7 @@ export default function ClientDetailPage() {
   const [selectedPkg, setSelectedPkg] = useState("");
   const [pkgNotes, setPkgNotes] = useState("");
   const [uploading, setUploading] = useState(false);
-  const [photoType, setPhotoType] = useState("GENERAL");
+  const [photoDate, setPhotoDate] = useState(new Date().toISOString().slice(0, 10));
   const [photoNotes, setPhotoNotes] = useState("");
   const [lightbox, setLightbox] = useState<Photo | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -133,10 +132,21 @@ export default function ClientDetailPage() {
     await fetch(`/api/clients/${id}/photos`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url, type: photoType, notes: photoNotes }),
+      body: JSON.stringify({ url, takenAt: photoDate, notes: photoNotes }),
     });
     setUploading(false); setPhotoNotes("");
+    setPhotoDate(new Date().toISOString().slice(0, 10));
     if (fileRef.current) fileRef.current.value = "";
+    load();
+  }
+
+  async function updatePhotoDate(photoId: string, takenAt: string) {
+    if (!takenAt) return;
+    await fetch(`/api/clients/${id}/photos/${photoId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ takenAt }),
+    });
     load();
   }
 
@@ -387,14 +397,13 @@ export default function ClientDetailPage() {
               <p className="text-sm font-medium text-gray-700 mb-3">Upload Photo</p>
               <div className="flex gap-3 flex-wrap items-end">
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Type</label>
-                  <Select value={photoType} onChange={(e) => setPhotoType(e.target.value)}>
-                    {PHOTO_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </Select>
+                  <label className="block text-xs text-gray-500 mb-1">Photo date</label>
+                  <input type="date" className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-black"
+                    value={photoDate} onChange={(e) => setPhotoDate(e.target.value)} />
                 </div>
                 <div className="flex-1 min-w-[160px]">
                   <label className="block text-xs text-gray-500 mb-1">Notes</label>
-                  <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="Optional notes" value={photoNotes} onChange={(e) => setPhotoNotes(e.target.value)} />
+                  <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-black" placeholder="Optional notes" value={photoNotes} onChange={(e) => setPhotoNotes(e.target.value)} />
                 </div>
                 <label className="cursor-pointer">
                   <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={uploadPhoto} disabled={uploading} />
@@ -411,19 +420,21 @@ export default function ClientDetailPage() {
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {photos.map((photo) => (
-                <div key={photo.id} className="relative group rounded-xl overflow-hidden border border-gray-200 cursor-pointer" onClick={() => setLightbox(photo)}>
-                  <img src={photo.url} alt={photo.notes || photo.type} className="w-full h-40 object-cover" />
-                  <div className="absolute top-2 left-2">
-                    <Badge variant={photo.type === "BEFORE" ? "warning" : photo.type === "AFTER" ? "success" : "outline"}>
-                      {photo.type}
-                    </Badge>
+                <div key={photo.id} className="rounded-xl overflow-hidden border border-gray-200">
+                  <div className="relative group cursor-pointer" onClick={() => setLightbox(photo)}>
+                    <img src={photo.url} alt={photo.notes || "client photo"} className="w-full h-40 object-cover" />
+                    <button
+                      className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={(e) => { e.stopPropagation(); deletePhoto(photo.id); }}>
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                    {photo.notes && <p className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs p-1 truncate">{photo.notes}</p>}
                   </div>
-                  <button
-                    className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={(e) => { e.stopPropagation(); deletePhoto(photo.id); }}>
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                  {photo.notes && <p className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs p-1 truncate">{photo.notes}</p>}
+                  {/* Date stamp — editable so progress stays accurate */}
+                  <input type="date"
+                    className="w-full text-xs text-gray-600 px-2 py-1.5 border-t border-gray-100 bg-gray-50"
+                    value={photo.takenAt.slice(0, 10)}
+                    onChange={(e) => updatePhotoDate(photo.id, e.target.value)} />
                 </div>
               ))}
             </div>
