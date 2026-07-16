@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, requireAuth } from "@/lib/auth";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  await requireAuth(); // logged-in staff/admin only
   const { id } = await params;
   const packages = await prisma.clientPackage.findMany({
     where: { clientId: id },

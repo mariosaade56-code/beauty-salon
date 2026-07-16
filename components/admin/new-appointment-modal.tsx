@@ -23,7 +23,10 @@ interface ClientSuggestion {
 
 export default function NewAppointmentModal({ onClose, onCreated, initialDate, initialTime }: Props) {
   const [services, setServices] = useState<{ id: string; name: string; duration: number }[]>([]);
-  const [packages, setPackages] = useState<{ id: string; name: string; serviceId: string; sessionCount: number; isActive: boolean }[]>([]);
+  const [packages, setPackages] = useState<{ id: string; name: string; serviceId: string; sessionCount: number; price: number; isActive: boolean }[]>([]);
+  const [packageId, setPackageId] = useState("");
+  const [pkgInfo, setPkgInfo] = useState<{ remaining: number; total: number } | null>(null);
+  const [unpaid, setUnpaid] = useState<number | null>(null);
   const [staff, setStaff] = useState<{ id: string; name: string }[]>([]);
   const [slots, setSlots] = useState<{ time: string; staffId: string; staffName: string }[]>([]);
   const [form, setForm] = useState({
@@ -58,10 +61,9 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
     setSuggestFor(null);
   }
 
-  // "pkg:<id>" means a package was selected; availability uses its underlying service
-  const isPackage = form.serviceId.startsWith("pkg:");
-  const selectedPackage = isPackage ? packages.find((p) => p.id === form.serviceId.slice(4)) : null;
-  const effectiveServiceId = isPackage ? selectedPackage?.serviceId || "" : form.serviceId;
+  // A package booking uses its underlying service for availability
+  const selectedPackage = packageId ? packages.find((p) => p.id === packageId) || null : null;
+  const effectiveServiceId = selectedPackage ? selectedPackage.serviceId : form.serviceId;
 
   useEffect(() => {
     fetch("/api/services").then((r) => r.json()).then(setServices);
@@ -84,6 +86,32 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
       setForm((f) => ({ ...f, time: initialTime }));
     }
   }, [slots, initialTime]);
+
+  // With a known client + package chosen: show her remaining sessions and unpaid balance
+  useEffect(() => {
+    setPkgInfo(null);
+    setUnpaid(null);
+    if (!linkedClient || !packageId) return;
+    fetch(`/api/clients/${linkedClient.id}/packages`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((cps) => {
+        const now = Date.now();
+        const mine = (Array.isArray(cps) ? cps : []).filter(
+          (cp) => cp.packageId === packageId && (!cp.expiresAt || new Date(cp.expiresAt).getTime() > now)
+        );
+        const remaining = mine.reduce((s, cp) => s + Math.max(cp.sessionsTotal - cp.sessionsUsed, 0), 0);
+        const total = mine.reduce((s, cp) => s + cp.sessionsTotal, 0);
+        setPkgInfo({ remaining, total });
+      })
+      .catch(() => {});
+    fetch(`/api/clients/${linkedClient.id}/transactions`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((txs) => {
+        if (!Array.isArray(txs)) return;
+        setUnpaid(txs.filter((t) => !t.paid).reduce((s, t) => s + t.amount, 0));
+      })
+      .catch(() => {});
+  }, [linkedClient, packageId]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -172,29 +200,51 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Service *</label>
-              <Select required value={form.serviceId} onChange={(e) => setForm({ ...form, serviceId: e.target.value, time: "" })}>
-                <option value="">Select service</option>
-                <optgroup label="Services">
-                  {services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </optgroup>
-                {packages.length > 0 && (
-                  <optgroup label="Packages">
-                    {packages.map((p) => <option key={p.id} value={`pkg:${p.id}`}>📦 {p.name} ({p.sessionCount} sessions)</option>)}
-                  </optgroup>
-                )}
+              <label className="block text-sm font-medium text-gray-700 mb-1">Service {!packageId && "*"}</label>
+              <Select required={!packageId} value={form.serviceId} disabled={!!packageId}
+                onChange={(e) => { setForm({ ...form, serviceId: e.target.value, time: "" }); setPackageId(""); }}>
+                <option value="">{packageId ? "— using package —" : "Select service"}</option>
+                {services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </Select>
-              {isPackage && (
-                <p className="text-xs text-pink-600 mt-1">A session will be deducted from the client&apos;s package</p>
-              )}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Staff (optional)</label>
-              <Select value={form.staffId} onChange={(e) => setForm({ ...form, staffId: e.target.value, time: "" })}>
-                <option value="">Any available</option>
-                {staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              <label className="block text-sm font-medium text-gray-700 mb-1">Package</label>
+              <Select value={packageId}
+                onChange={(e) => { setPackageId(e.target.value); setForm({ ...form, serviceId: "", time: "" }); }}>
+                <option value="">— None —</option>
+                {packages.map((p) => <option key={p.id} value={p.id}>📦 {p.name} ({p.sessionCount} sessions · ${p.price})</option>)}
               </Select>
             </div>
+          </div>
+
+          {/* Client package status */}
+          {selectedPackage && (
+            <div className="rounded-lg border px-3 py-2.5 text-sm space-y-1 bg-gray-50 border-gray-200">
+              {!linkedClient ? (
+                <p className="text-gray-500 text-xs">Pick an existing client above (type their name or phone) to see their remaining sessions.</p>
+              ) : pkgInfo === null ? (
+                <p className="text-gray-400 text-xs">Checking {linkedClient.name}&apos;s package…</p>
+              ) : pkgInfo.remaining > 0 ? (
+                <p className="text-green-700 text-xs font-medium">
+                  ✓ {linkedClient.name} has {pkgInfo.remaining} of {pkgInfo.total} sessions left — this booking uses 1 (then {pkgInfo.remaining - 1} left)
+                </p>
+              ) : (
+                <p className="text-amber-700 text-xs font-medium">
+                  ⚠ {linkedClient.name} has no active {selectedPackage.name} — a new package (${selectedPackage.price}) will be assigned with this booking
+                </p>
+              )}
+              {linkedClient && unpaid !== null && unpaid > 0 && (
+                <p className="text-red-600 text-xs font-medium">Pending payment: ${unpaid.toFixed(2)} unpaid balance on {linkedClient.name}&apos;s account</p>
+              )}
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Staff (optional)</label>
+            <Select value={form.staffId} onChange={(e) => setForm({ ...form, staffId: e.target.value, time: "" })}>
+              <option value="">Any available</option>
+              {staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </Select>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -206,7 +256,7 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
               <Select required value={form.time} disabled={!effectiveServiceId}
                 onChange={(e) => setForm({ ...form, time: e.target.value })}>
                 <option value="">
-                  {!effectiveServiceId ? "Select service first" : slots.length === 0 ? "No times available" : "Select time"}
+                  {!effectiveServiceId ? "Select service or package first" : slots.length === 0 ? "No times available" : "Select time"}
                 </option>
                 {slots.map((slot) => (
                   <option key={`${slot.time}-${slot.staffId}`} value={slot.time}>

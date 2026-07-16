@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, requireAuth } from "@/lib/auth";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  await requireAdmin();
+  await requireAuth(); // workers may see balances; editing stays admin-only
   const { id } = await params;
   const transactions = await prisma.clientTransaction.findMany({
     where: { clientId: id },
