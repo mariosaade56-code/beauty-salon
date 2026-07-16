@@ -11,6 +11,7 @@ interface Props {
   onCreated: () => void;
   initialDate?: string; // yyyy-MM-dd — from clicking a calendar slot
   initialTime?: string; // HH:mm
+  initialStaffId?: string; // clicked technician's column
 }
 
 interface ClientSuggestion {
@@ -21,7 +22,7 @@ interface ClientSuggestion {
   _count: { appointments: number };
 }
 
-export default function NewAppointmentModal({ onClose, onCreated, initialDate, initialTime }: Props) {
+export default function NewAppointmentModal({ onClose, onCreated, initialDate, initialTime, initialStaffId }: Props) {
   const [services, setServices] = useState<{ id: string; name: string; duration: number }[]>([]);
   const [packages, setPackages] = useState<{ id: string; name: string; serviceId: string; sessionCount: number; price: number; isActive: boolean }[]>([]);
   const [packageId, setPackageId] = useState("");
@@ -31,7 +32,7 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
   const [slots, setSlots] = useState<{ time: string; staffId: string; staffName: string }[]>([]);
   const [form, setForm] = useState({
     clientName: "", phone: "", email: "",
-    serviceId: "", staffId: "", date: initialDate || format(new Date(), "yyyy-MM-dd"), time: "", notes: "",
+    serviceId: "", staffId: initialStaffId || "", date: initialDate || format(new Date(), "yyyy-MM-dd"), time: "", notes: "",
   });
   const appliedInitialTime = useRef(false);
   const [loading, setLoading] = useState(false);

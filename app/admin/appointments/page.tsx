@@ -20,8 +20,10 @@ interface Appointment {
   amountPaid: number | null;
   client: { name: string; phone: string };
   service: { name: string; price: number | null; duration: number };
-  staff: { name: string; color: string } | null;
+  staff: { id: string; name: string; color: string } | null;
 }
+
+interface StaffMember { id: string; name: string; color: string; }
 
 const statusColors: Record<string, "default" | "success" | "warning" | "destructive" | "outline"> = {
   CONFIRMED: "success",
@@ -46,8 +48,9 @@ export default function AppointmentsPage() {
   const weekKey = format(weekStart, "yyyy-MM-dd");
 
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [showNew, setShowNew] = useState(false);
-  const [prefill, setPrefill] = useState<{ date: string; time: string } | null>(null);
+  const [prefill, setPrefill] = useState<{ date: string; time: string; staffId?: string } | null>(null);
   const [detail, setDetail] = useState<Appointment | null>(null);
   const [payFor, setPayFor] = useState<Appointment | null>(null);
   const [payMode, setPayMode] = useState<"PAID" | "PARTIAL" | "UNPAID">("PAID");
@@ -66,6 +69,7 @@ export default function AppointmentsPage() {
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 60000);
+    fetch("/api/staff").then((r) => r.json()).then((d) => setStaffList(Array.isArray(d) ? d : []));
     return () => clearInterval(t);
   }, []);
 
@@ -104,34 +108,34 @@ export default function AppointmentsPage() {
     load();
   }
 
+  // Each day column is split into one section per technician
+  const cols = Math.max(staffList.length, 1);
+
   function slotClick(day: Date, e: React.MouseEvent<HTMLDivElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
     const y = e.clientY - rect.top;
+    const x = e.clientX - rect.left;
     const mins = OPEN * 60 + Math.floor(((y / HOUR_PX) * 60) / 30) * 30;
     const clamped = Math.min(Math.max(mins, OPEN * 60), CLOSE * 60 - 30);
     const hh = String(Math.floor(clamped / 60)).padStart(2, "0");
     const mm = String(clamped % 60).padStart(2, "0");
-    setPrefill({ date: format(day, "yyyy-MM-dd"), time: `${hh}:${mm}` });
+    // Which technician's half was clicked → auto-assign her
+    const idx = Math.min(Math.floor((x / rect.width) * cols), cols - 1);
+    const staffId = staffList[idx]?.id;
+    setPrefill({ date: format(day, "yyyy-MM-dd"), time: `${hh}:${mm}`, staffId });
     setShowNew(true);
   }
 
   const active = appointments.filter((a) => a.status !== "CANCELLED");
 
-  // Google-style lanes: overlapping appointments share the column width
+  // Place each appointment in its technician's section of the day column
   function layoutDay(day: Date) {
-    const dayAppts = active
+    return active
       .filter((a) => isSameDay(new Date(a.startTime), day))
-      .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
-    const laneEnds: number[] = [];
-    const placed = dayAppts.map((a) => {
-      const s = new Date(a.startTime).getTime();
-      const e = new Date(a.endTime).getTime();
-      let lane = laneEnds.findIndex((end) => end <= s);
-      if (lane === -1) { laneEnds.push(e); lane = laneEnds.length - 1; }
-      else laneEnds[lane] = e;
-      return { a, lane };
-    });
-    return { placed, laneCount: Math.max(laneEnds.length, 1) };
+      .map((a) => {
+        const idx = a.staff ? staffList.findIndex((s) => s.id === a.staff!.id) : -1;
+        return { a, col: idx }; // -1 → unknown/old staff: spans the full day column
+      });
   }
 
   const hours = Array.from({ length: CLOSE - OPEN }, (_, i) => OPEN + i);
@@ -166,11 +170,22 @@ export default function AppointmentsPage() {
           <div className="grid border-b border-gray-200 sticky top-0 bg-white z-20" style={{ gridTemplateColumns: "56px repeat(7, 1fr)" }}>
             <div />
             {days.map((d) => (
-              <div key={d.toISOString()} className="py-2 text-center border-l border-gray-100">
+              <div key={d.toISOString()} className="pt-2 text-center border-l border-gray-100">
                 <p className="text-xs text-gray-500">{format(d, "EEE")}</p>
                 <p className={`text-lg font-semibold w-9 h-9 mx-auto flex items-center justify-center rounded-full ${isToday(d) ? "bg-pink-600 text-white" : "text-gray-900"}`}>
                   {format(d, "d")}
                 </p>
+                {/* Technician sections */}
+                {staffList.length > 1 && (
+                  <div className="flex border-t border-gray-100 mt-1">
+                    {staffList.map((s) => (
+                      <div key={s.id} className="flex-1 flex items-center justify-center gap-1 py-1 border-l border-gray-50 first:border-l-0">
+                        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />
+                        <span className="text-[10px] text-gray-500 truncate">{s.name.split(" ")[0]}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -188,7 +203,7 @@ export default function AppointmentsPage() {
             </div>
 
             {days.map((day) => {
-              const { placed, laneCount } = layoutDay(day);
+              const placed = layoutDay(day);
               return (
                 <div key={day.toISOString()}
                   className="relative border-l border-gray-100 cursor-pointer"
@@ -202,6 +217,12 @@ export default function AppointmentsPage() {
                     </div>
                   ))}
 
+                  {/* divider between technician sections */}
+                  {cols > 1 && Array.from({ length: cols - 1 }, (_, i) => (
+                    <div key={i} className="absolute top-0 bottom-0 border-l border-dashed border-gray-200 pointer-events-none"
+                      style={{ left: `${((i + 1) * 100) / cols}%` }} />
+                  ))}
+
                   {/* now indicator */}
                   {isToday(day) && nowVisible && (
                     <div className="absolute left-0 right-0 z-10 pointer-events-none" style={{ top: nowTop }}>
@@ -211,13 +232,14 @@ export default function AppointmentsPage() {
                     </div>
                   )}
 
-                  {/* appointment blocks */}
-                  {placed.map(({ a, lane }) => {
+                  {/* appointment blocks — placed in their technician's section */}
+                  {placed.map(({ a, col }) => {
                     const s = new Date(a.startTime);
                     const e = new Date(a.endTime);
                     const top = ((s.getHours() * 60 + s.getMinutes()) - OPEN * 60) / 60 * HOUR_PX;
                     const height = Math.max(((e.getTime() - s.getTime()) / 60000 / 60) * HOUR_PX, 22);
-                    const width = 100 / laneCount;
+                    const width = col === -1 ? 100 : 100 / cols;
+                    const left = col === -1 ? 0 : col * (100 / cols);
                     const done = a.status === "COMPLETED";
                     const noShow = a.status === "NO_SHOW";
                     return (
@@ -227,7 +249,7 @@ export default function AppointmentsPage() {
                         style={{
                           top,
                           height,
-                          left: `calc(${lane * width}% + 2px)`,
+                          left: `calc(${left}% + 2px)`,
                           width: `calc(${width}% - 4px)`,
                           backgroundColor: a.staff?.color || "#9ca3af",
                         }}>
@@ -251,6 +273,7 @@ export default function AppointmentsPage() {
         <NewAppointmentModal
           initialDate={prefill?.date}
           initialTime={prefill?.time}
+          initialStaffId={prefill?.staffId}
           onClose={() => { setShowNew(false); setPrefill(null); }}
           onCreated={() => { setShowNew(false); setPrefill(null); load(); }}
         />
