@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
-import { ChevronLeft, Package, Camera, Trash2, Plus, X } from "lucide-react";
+import { ChevronLeft, Package, Camera, Trash2, Plus, X, Download } from "lucide-react";
 
 interface Package { id: string; name: string; sessionCount: number; price: number; service: { name: string }; }
 interface ClientPackage {
@@ -154,6 +154,18 @@ export default function ClientDetailPage() {
     if (!confirm("Delete this photo?")) return;
     await fetch(`/api/clients/${id}/photos/${photoId}`, { method: "DELETE" });
     load();
+  }
+
+  // Photos are stored exactly as uploaded, so this downloads the original quality
+  function downloadPhoto(photo: Photo) {
+    const mime = photo.url.match(/^data:([^;]+);/)?.[1] || "image/jpeg";
+    const ext = (mime.split("/")[1] || "jpg").replace("jpeg", "jpg");
+    const a = document.createElement("a");
+    a.href = photo.url;
+    a.download = `${(client?.name || "client").replace(/\s+/g, "-")}-${photo.takenAt.slice(0, 10)}.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   }
 
   if (!client) return <div className="p-6 text-gray-400">Loading…</div>;
@@ -423,11 +435,20 @@ export default function ClientDetailPage() {
                 <div key={photo.id} className="rounded-xl overflow-hidden border border-gray-200">
                   <div className="relative group cursor-pointer" onClick={() => setLightbox(photo)}>
                     <img src={photo.url} alt={photo.notes || "client photo"} className="w-full h-40 object-cover" />
-                    <button
-                      className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={(e) => { e.stopPropagation(); deletePhoto(photo.id); }}>
-                      <Trash2 className="w-3 h-3" />
-                    </button>
+                    <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        className="bg-gray-900/70 text-white rounded-full w-6 h-6 flex items-center justify-center"
+                        title="Download original"
+                        onClick={(e) => { e.stopPropagation(); downloadPhoto(photo); }}>
+                        <Download className="w-3 h-3" />
+                      </button>
+                      <button
+                        className="bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center"
+                        title="Delete"
+                        onClick={(e) => { e.stopPropagation(); deletePhoto(photo.id); }}>
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
                     {photo.notes && <p className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs p-1 truncate">{photo.notes}</p>}
                   </div>
                   {/* Date stamp — editable so progress stays accurate */}
@@ -449,6 +470,11 @@ export default function ClientDetailPage() {
             <img src={lightbox.url} alt={lightbox.notes || ""} className="w-full rounded-xl" />
             {lightbox.notes && <p className="text-white text-sm mt-2 text-center">{lightbox.notes}</p>}
             <p className="text-gray-400 text-xs text-center mt-1">{format(new Date(lightbox.takenAt), "MMMM d, yyyy")}</p>
+            <div className="flex justify-center mt-3">
+              <Button size="sm" variant="secondary" onClick={() => downloadPhoto(lightbox)}>
+                <Download className="w-4 h-4 mr-1.5" /> Download original
+              </Button>
+            </div>
             <button className="absolute top-2 right-2 bg-black/50 text-white rounded-full w-8 h-8 flex items-center justify-center" onClick={() => setLightbox(null)}>
               <X className="w-4 h-4" />
             </button>
