@@ -26,12 +26,6 @@ export default function ClientsPage() {
   const [showNew, setShowNew] = useState(false);
   const [newClient, setNewClient] = useState({ name: "", phone: "", email: "" });
   const [newError, setNewError] = useState("");
-  const [role, setRole] = useState("ADMIN");
-  const isStaff = role === "STAFF";
-
-  useEffect(() => {
-    fetch("/api/auth/me").then((r) => r.json()).then((u) => { if (u?.role) setRole(u.role); });
-  }, []);
 
   async function createClient(e: React.FormEvent) {
     e.preventDefault();
@@ -48,11 +42,7 @@ export default function ClientsPage() {
     }
     setShowNew(false);
     setNewClient({ name: "", phone: "", email: "" });
-    if (isStaff) {
-      load(); // workers stay on the list — the client file is admin-only
-    } else {
-      router.push(`/admin/clients/${data.id}`);
-    }
+    router.push(`/admin/clients/${data.id}`);
   }
 
   async function load(q = "") {
@@ -82,15 +72,13 @@ export default function ClientsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-xl md:text-2xl font-bold text-gray-900">Clients</h1>
         <div className="flex gap-2">
-          {!isStaff && (
-            <label className="cursor-pointer">
-              <input type="file" accept=".csv" className="hidden" onChange={handleImport} />
-              <Button variant="outline" size="sm" disabled={importing} onClick={() => {}}>
-                <Upload className="w-4 h-4 mr-1" />
-                {importing ? "Importing..." : "Import CSV"}
-              </Button>
-            </label>
-          )}
+          <label className="cursor-pointer">
+            <input type="file" accept=".csv" className="hidden" onChange={handleImport} />
+            <Button variant="outline" size="sm" disabled={importing} onClick={() => {}}>
+              <Upload className="w-4 h-4 mr-1" />
+              {importing ? "Importing..." : "Import CSV"}
+            </Button>
+          </label>
           <Button size="sm" onClick={() => { setShowNew(true); setNewError(""); }}>
             <Plus className="w-4 h-4 mr-1" /> Add Client
           </Button>
@@ -141,12 +129,12 @@ export default function ClientsPage() {
       {/* Mobile cards */}
       <div className="md:hidden space-y-3">
         {clients.map((c) => (
-          <Card key={c.id} className={isStaff ? "" : "cursor-pointer hover:shadow-md transition-shadow"}
-            onClick={() => { if (!isStaff) router.push(`/admin/clients/${c.id}`); }}>
+          <Card key={c.id} className="cursor-pointer hover:shadow-md transition-shadow"
+            onClick={() => router.push(`/admin/clients/${c.id}`)}>
             <CardContent className="p-4">
               <div className="flex items-start justify-between">
               <p className="font-semibold text-gray-900">{c.name}</p>
-              {!isStaff && <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />}</div>
+              <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" /></div>
               <p className="text-sm text-gray-500 flex items-center gap-1 mt-1"><Phone className="w-3 h-3" />{c.phone}</p>
               {c.email && <p className="text-sm text-gray-500 flex items-center gap-1"><Mail className="w-3 h-3" />{c.email}</p>}
               <div className="flex justify-between mt-2 text-xs text-gray-400">
@@ -177,8 +165,8 @@ export default function ClientsPage() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {clients.map((c) => (
-                <tr key={c.id} className={isStaff ? "hover:bg-gray-50" : "hover:bg-gray-50 cursor-pointer"}
-                  onClick={() => { if (!isStaff) router.push(`/admin/clients/${c.id}`); }}>
+                <tr key={c.id} className="hover:bg-gray-50 cursor-pointer"
+                  onClick={() => router.push(`/admin/clients/${c.id}`)}>
                   <td className="px-4 py-3 font-medium text-gray-900">{c.name}</td>
                   <td className="px-4 py-3 text-gray-500">
                     <div className="flex items-center gap-1"><Phone className="w-3 h-3" /> {c.phone}</div>

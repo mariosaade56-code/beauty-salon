@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
+import { requireAuth } from "@/lib/auth";
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string; photoId: string }> }) {
-  await requireAdmin();
+  await requireAuth();
   const { photoId } = await params;
   const body = await req.json();
   const data: { takenAt?: Date; notes?: string | null } = {};
@@ -14,7 +14,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string; photoId: string }> }) {
-  await requireAdmin();
+  await requireAuth();
   const { photoId } = await params;
   await prisma.clientPhoto.delete({ where: { id: photoId } });
   return NextResponse.json({ ok: true });

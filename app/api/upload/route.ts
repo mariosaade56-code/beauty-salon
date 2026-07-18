@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/auth";
+import { requireAuth } from "@/lib/auth";
 
 export async function POST(req: Request) {
-  await requireAdmin();
+  await requireAuth();
   const formData = await req.formData();
   const file = formData.get("file") as File;
   if (!file) return NextResponse.json({ error: "No file" }, { status: 400 });
