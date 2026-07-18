@@ -23,7 +23,7 @@ interface Appointment {
   staff: { id: string; name: string; color: string } | null;
 }
 
-interface StaffMember { id: string; name: string; color: string; }
+interface StaffMember { id: string; name: string; color: string; overbook?: boolean; parentId?: string | null; }
 
 const statusColors: Record<string, "default" | "success" | "warning" | "destructive" | "outline"> = {
   CONFIRMED: "success",
@@ -35,18 +35,23 @@ const statusColors: Record<string, "default" | "success" | "warning" | "destruct
 
 const OPEN = 9;   // salon opens
 const CLOSE = 18; // salon closes
-const HOUR_PX = 64;
 
 function hourLabel(h: number) {
   return `${((h + 11) % 12) + 1} ${h < 12 ? "AM" : "PM"}`;
 }
 
-export default function AppointmentsPage() {
-  const [anchor, setAnchor] = useState(new Date());
-  const weekStart = startOfWeek(anchor, { weekStartsOn: 1 });
-  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
-  const weekKey = format(weekStart, "yyyy-MM-dd");
+function payTag(a: Appointment): string {
+  if (a.status !== "COMPLETED") return "";
+  if (a.clientPackageId) return "Package";
+  if (a.paymentStatus === "PAID") return "Paid";
+  if (a.paymentStatus === "PARTIAL") return `Partial $${a.amountPaid ?? 0}`;
+  if (a.paymentStatus === "UNPAID") return "Unpaid";
+  return "";
+}
 
+export default function AppointmentsPage() {
+  const [view, setView] = useState<"day" | "week">("week");
+  const [anchor, setAnchor] = useState(new Date());
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [showNew, setShowNew] = useState(false);
@@ -57,15 +62,26 @@ export default function AppointmentsPage() {
   const [payAmount, setPayAmount] = useState("");
   const [now, setNow] = useState(new Date());
 
+  // Day view is tighter — good default on phones
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.innerWidth < 768) setView("day");
+  }, []);
+
+  const HOUR_PX = view === "day" ? 88 : 60;
+  const days = view === "day"
+    ? [anchor]
+    : Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(anchor, { weekStartsOn: 1 }), i));
+  const rangeKey = `${format(days[0], "yyyy-MM-dd")}_${format(days[days.length - 1], "yyyy-MM-dd")}`;
+
   async function load() {
     const from = format(days[0], "yyyy-MM-dd");
-    const to = format(days[6], "yyyy-MM-dd");
+    const to = format(days[days.length - 1], "yyyy-MM-dd");
     const data = await fetch(`/api/appointments?from=${from}&to=${to}`).then((r) => r.json());
     setAppointments(Array.isArray(data) ? data : []);
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { load(); }, [weekKey]);
+  useEffect(() => { load(); }, [rangeKey]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 60000);
@@ -84,15 +100,9 @@ export default function AppointmentsPage() {
     load();
   }
 
-  // "Done" asks how the client paid — unless it's a package session or a free service
   function startComplete(appt: Appointment) {
-    if (appt.clientPackageId || !appt.service.price) {
-      updateStatus(appt.id, "COMPLETED");
-      return;
-    }
-    setPayMode("PAID");
-    setPayAmount("");
-    setPayFor(appt);
+    if (appt.clientPackageId || !appt.service.price) { updateStatus(appt.id, "COMPLETED"); return; }
+    setPayMode("PAID"); setPayAmount(""); setPayFor(appt);
   }
 
   async function confirmComplete() {
@@ -108,80 +118,111 @@ export default function AppointmentsPage() {
     load();
   }
 
-  // Each day column is split into one section per technician
-  const cols = Math.max(staffList.length, 1);
-
-  function slotClick(day: Date, e: React.MouseEvent<HTMLDivElement>) {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const y = e.clientY - rect.top;
-    const x = e.clientX - rect.left;
-    const mins = OPEN * 60 + Math.floor(((y / HOUR_PX) * 60) / 30) * 30;
-    const clamped = Math.min(Math.max(mins, OPEN * 60), CLOSE * 60 - 30);
-    const hh = String(Math.floor(clamped / 60)).padStart(2, "0");
-    const mm = String(clamped % 60).padStart(2, "0");
-    // Which technician's half was clicked → auto-assign her
-    const idx = Math.min(Math.floor((x / rect.width) * cols), cols - 1);
-    const staffId = staffList[idx]?.id;
-    setPrefill({ date: format(day, "yyyy-MM-dd"), time: `${hh}:${mm}`, staffId });
-    setShowNew(true);
-  }
-
   const active = appointments.filter((a) => a.status !== "CANCELLED");
-
-  // Place each appointment in its technician's section of the day column
-  function layoutDay(day: Date) {
-    return active
-      .filter((a) => isSameDay(new Date(a.startTime), day))
-      .map((a) => {
-        const idx = a.staff ? staffList.findIndex((s) => s.id === a.staff!.id) : -1;
-        return { a, col: idx }; // -1 → unknown/old staff: spans the full day column
-      });
-  }
-
-  const hours = Array.from({ length: CLOSE - OPEN }, (_, i) => OPEN + i);
+  const hours = Array.from({ length: CLOSE - OPEN + 1 }, (_, i) => OPEN + i);
+  const gridHeight = (CLOSE - OPEN) * HOUR_PX;
   const nowTop = ((now.getHours() * 60 + now.getMinutes()) - OPEN * 60) / 60 * HOUR_PX;
   const nowVisible = now.getHours() >= OPEN && now.getHours() < CLOSE;
 
+  // Day view splits each column into staff lanes (technicians + their helpers)
+  const lanes = staffList; // already ordered Jacky, Jacky(2), Jennifer, Jennifer(2)
+  const laneCount = Math.max(lanes.length, 1);
+
+  function timeFromClick(e: React.MouseEvent<HTMLDivElement>) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const mins = OPEN * 60 + Math.floor(((y / HOUR_PX) * 60) / 30) * 30;
+    const clamped = Math.min(Math.max(mins, OPEN * 60), CLOSE * 60 - 30);
+    return `${String(Math.floor(clamped / 60)).padStart(2, "0")}:${String(clamped % 60).padStart(2, "0")}`;
+  }
+
+  function dayClick(day: Date, e: React.MouseEvent<HTMLDivElement>) {
+    const time = timeFromClick(e);
+    let staffId: string | undefined;
+    if (view === "day" && lanes.length) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const idx = Math.min(Math.floor((x / rect.width) * laneCount), laneCount - 1);
+      staffId = lanes[idx]?.id;
+    }
+    setPrefill({ date: format(day, "yyyy-MM-dd"), time, staffId });
+    setShowNew(true);
+  }
+
+  const dayAppts = (day: Date) =>
+    active
+      .filter((a) => isSameDay(new Date(a.startTime), day))
+      .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+
+  // Week view: pack overlapping appointments into side-by-side lanes
+  function packOverlaps(list: Appointment[]) {
+    const laneEnds: number[] = [];
+    const placed = list.map((a) => {
+      const s = new Date(a.startTime).getTime();
+      const e = new Date(a.endTime).getTime();
+      let lane = laneEnds.findIndex((end) => end <= s);
+      if (lane === -1) { laneEnds.push(e); lane = laneEnds.length - 1; }
+      else laneEnds[lane] = e;
+      return { a, lane };
+    });
+    return { placed, count: Math.max(laneEnds.length, 1) };
+  }
+
+  function shiftNav(dir: number) {
+    setAnchor(addDays(anchor, dir * (view === "day" ? 1 : 7)));
+  }
+
+  const dateLabel = view === "day"
+    ? format(days[0], "EEEE, MMM d, yyyy")
+    : `${format(days[0], "MMM d")} – ${format(days[6], "MMM d, yyyy")}`;
+
   return (
-    <div className="p-4 md:p-6 space-y-4 flex flex-col h-full">
+    <div className="p-3 md:p-6 space-y-3 md:space-y-4 flex flex-col h-full">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-xl md:text-2xl font-bold text-gray-900">Appointments</h1>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setAnchor(addDays(weekStart, -7))}>
-            <ChevronLeft className="w-4 h-4" />
-          </Button>
-          <span className="font-semibold text-gray-900 text-sm md:text-base min-w-[150px] text-center">
-            {format(days[0], "MMM d")} – {format(days[6], "MMM d, yyyy")}
-          </span>
-          <Button variant="outline" size="sm" onClick={() => setAnchor(addDays(weekStart, 7))}>
-            <ChevronRight className="w-4 h-4" />
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => setAnchor(new Date())}>Today</Button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* View toggle */}
+          <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+            {(["day", "week"] as const).map((v) => (
+              <button key={v} onClick={() => setView(v)}
+                className={`px-3 py-1.5 text-sm font-medium capitalize transition-colors ${view === v ? "bg-pink-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>
+                {v}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1">
+            <Button variant="outline" size="sm" onClick={() => shiftNav(-1)}><ChevronLeft className="w-4 h-4" /></Button>
+            <Button variant="outline" size="sm" onClick={() => shiftNav(1)}><ChevronRight className="w-4 h-4" /></Button>
+            <Button variant="ghost" size="sm" onClick={() => setAnchor(new Date())}>Today</Button>
+          </div>
           <Button size="sm" onClick={() => { setPrefill(null); setShowNew(true); }}>
             <Plus className="w-4 h-4 mr-1" /> New
           </Button>
         </div>
       </div>
+      <p className="text-sm font-semibold text-gray-700 -mt-1">{dateLabel}</p>
 
-      {/* Week grid */}
+      {/* Calendar grid */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-auto flex-1">
-        <div className="min-w-[860px]">
-          {/* Day headers */}
-          <div className="grid border-b border-gray-200 sticky top-0 bg-white z-20" style={{ gridTemplateColumns: "56px repeat(7, 1fr)" }}>
+        <div style={{ minWidth: view === "day" ? undefined : 820 }}>
+          {/* Column headers */}
+          <div className="grid border-b border-gray-200 sticky top-0 bg-white z-20"
+            style={{ gridTemplateColumns: `48px repeat(${days.length}, 1fr)` }}>
             <div />
             {days.map((d) => (
               <div key={d.toISOString()} className="pt-2 text-center border-l border-gray-100">
-                <p className="text-xs text-gray-500">{format(d, "EEE")}</p>
-                <p className={`text-lg font-semibold w-9 h-9 mx-auto flex items-center justify-center rounded-full ${isToday(d) ? "bg-pink-600 text-white" : "text-gray-900"}`}>
+                <p className="text-[11px] text-gray-500">{format(d, "EEE")}</p>
+                <p className={`text-base font-semibold w-8 h-8 mx-auto flex items-center justify-center rounded-full ${isToday(d) ? "bg-pink-600 text-white" : "text-gray-900"}`}>
                   {format(d, "d")}
                 </p>
-                {/* Technician sections */}
-                {staffList.length > 1 && (
+                {/* Day view: staff lane sub-headers */}
+                {view === "day" && lanes.length > 0 && (
                   <div className="flex border-t border-gray-100 mt-1">
-                    {staffList.map((s) => (
-                      <div key={s.id} className="flex-1 flex items-center justify-center gap-1 py-1 border-l border-gray-50 first:border-l-0">
-                        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />
-                        <span className="text-[10px] text-gray-500 truncate">{s.name.split(" ")[0]}</span>
+                    {lanes.map((s) => (
+                      <div key={s.id}
+                        className={`flex-1 flex items-center justify-center gap-1 py-1.5 ${s.parentId ? "border-l border-dashed border-gray-200" : "border-l border-gray-300 first:border-l-0"}`}>
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />
+                        <span className="text-[11px] font-medium text-gray-600 truncate">{s.name}</span>
                       </div>
                     ))}
                   </div>
@@ -191,36 +232,39 @@ export default function AppointmentsPage() {
           </div>
 
           {/* Time grid */}
-          <div className="grid" style={{ gridTemplateColumns: "56px repeat(7, 1fr)" }}>
+          <div className="grid" style={{ gridTemplateColumns: `48px repeat(${days.length}, 1fr)` }}>
             {/* Hour gutter */}
-            <div className="relative" style={{ height: (CLOSE - OPEN) * HOUR_PX }}>
+            <div className="relative" style={{ height: gridHeight }}>
               {hours.map((h) => (
-                <span key={h} className="absolute right-2 text-[11px] text-gray-400 -translate-y-1/2"
-                  style={{ top: (h - OPEN) * HOUR_PX }}>
-                  {h === OPEN ? "" : hourLabel(h)}
+                <span key={h}
+                  className="absolute right-1.5 text-[10px] text-gray-400 leading-none"
+                  style={{ top: Math.max((h - OPEN) * HOUR_PX - 4, 0) }}>
+                  {hourLabel(h)}
                 </span>
               ))}
             </div>
 
             {days.map((day) => {
-              const placed = layoutDay(day);
+              const list = dayAppts(day);
+              const week = view === "week" ? packOverlaps(list) : null;
               return (
                 <div key={day.toISOString()}
                   className="relative border-l border-gray-100 cursor-pointer"
-                  style={{ height: (CLOSE - OPEN) * HOUR_PX }}
-                  onClick={(e) => slotClick(day, e)}>
+                  style={{ height: gridHeight }}
+                  onClick={(e) => dayClick(day, e)}>
                   {/* hour + half-hour lines */}
-                  {hours.map((h) => (
+                  {hours.slice(0, -1).map((h) => (
                     <div key={h}>
                       <div className="absolute left-0 right-0 border-t border-gray-100" style={{ top: (h - OPEN) * HOUR_PX }} />
                       <div className="absolute left-0 right-0 border-t border-gray-50" style={{ top: (h - OPEN) * HOUR_PX + HOUR_PX / 2 }} />
                     </div>
                   ))}
 
-                  {/* divider between technician sections */}
-                  {cols > 1 && Array.from({ length: cols - 1 }, (_, i) => (
-                    <div key={i} className="absolute top-0 bottom-0 border-l border-dashed border-gray-200 pointer-events-none"
-                      style={{ left: `${((i + 1) * 100) / cols}%` }} />
+                  {/* Day view: dividers between staff lanes */}
+                  {view === "day" && laneCount > 1 && lanes.slice(1).map((s, i) => (
+                    <div key={s.id}
+                      className={`absolute top-0 bottom-0 pointer-events-none ${s.parentId ? "border-l border-dashed border-gray-100" : "border-l border-gray-200"}`}
+                      style={{ left: `${((i + 1) * 100) / laneCount}%` }} />
                   ))}
 
                   {/* now indicator */}
@@ -232,38 +276,52 @@ export default function AppointmentsPage() {
                     </div>
                   )}
 
-                  {/* appointment blocks — placed in their technician's section */}
-                  {placed.map(({ a, col }) => {
+                  {/* Appointment blocks */}
+                  {list.map((a) => {
                     const s = new Date(a.startTime);
                     const e = new Date(a.endTime);
                     const top = ((s.getHours() * 60 + s.getMinutes()) - OPEN * 60) / 60 * HOUR_PX;
-                    const height = Math.max(((e.getTime() - s.getTime()) / 60000 / 60) * HOUR_PX, 22);
-                    const width = col === -1 ? 100 : 100 / cols;
-                    const left = col === -1 ? 0 : col * (100 / cols);
+                    const height = Math.max(((e.getTime() - s.getTime()) / 60000 / 60) * HOUR_PX, 30);
+
+                    // Horizontal placement: staff lane (day view) or overlap lane (week view)
+                    let leftStyle = "2px";
+                    let widthCalc = "calc(100% - 4px)";
+                    if (view === "day") {
+                      const laneIdx = a.staff ? lanes.findIndex((l) => l.id === a.staff!.id) : -1;
+                      if (laneIdx >= 0) {
+                        const w = 100 / laneCount;
+                        leftStyle = `calc(${laneIdx * w}% + 2px)`;
+                        widthCalc = `calc(${w}% - 3px)`;
+                      }
+                    } else if (week) {
+                      const lane = week.placed.find((p) => p.a.id === a.id)!.lane;
+                      const w = 100 / week.count;
+                      leftStyle = `calc(${lane * w}% + 1px)`;
+                      widthCalc = `calc(${w}% - 3px)`;
+                    }
+
                     const done = a.status === "COMPLETED";
                     const noShow = a.status === "NO_SHOW";
+                    const tag = payTag(a);
+                    // Show more detail as the block gets taller
+                    const showService = height >= 40;
+                    const showMeta = height >= 60;
                     return (
                       <button key={a.id} type="button"
                         onClick={(ev) => { ev.stopPropagation(); setDetail(a); }}
-                        className={`absolute rounded-md px-1.5 py-0.5 text-left overflow-hidden text-white shadow-sm hover:shadow-md transition-shadow z-[5] ${done || noShow ? "opacity-60" : ""}`}
-                        style={{
-                          top,
-                          height,
-                          left: `calc(${left}% + 2px)`,
-                          width: `calc(${width}% - 4px)`,
-                          backgroundColor: a.staff?.color || "#9ca3af",
-                        }}>
+                        className={`absolute rounded-md px-1.5 py-1 text-left overflow-hidden text-white shadow-sm hover:shadow-md hover:z-10 transition-shadow ${done || noShow ? "opacity-70" : ""}`}
+                        style={{ top, height, left: leftStyle, width: widthCalc, backgroundColor: a.staff?.color || "#9ca3af" }}>
                         <p className="text-[11px] font-semibold leading-tight truncate">
                           {done ? "✓ " : noShow ? "✗ " : ""}{a.client.name}
                         </p>
                         <p className="text-[10px] leading-tight truncate opacity-90">
-                          {format(s, "h:mm")} · {a.service.name}
-                          {done && (a.clientPackageId
-                            ? " · Package"
-                            : a.paymentStatus === "PAID" ? " · Paid"
-                            : a.paymentStatus === "PARTIAL" ? ` · Partial $${a.amountPaid ?? 0}`
-                            : a.paymentStatus === "UNPAID" ? " · Unpaid" : "")}
+                          {format(s, "h:mm")}{showService ? ` · ${a.service.name}` : ""}
                         </p>
+                        {showMeta && (
+                          <p className="text-[10px] leading-tight truncate opacity-80 mt-0.5">
+                            {a.staff?.name || "Any staff"}{tag ? ` · ${tag}` : a.service.price ? ` · $${a.service.price}` : ""}
+                          </p>
+                        )}
                       </button>
                     );
                   })}

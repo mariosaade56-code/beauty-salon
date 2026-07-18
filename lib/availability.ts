@@ -40,7 +40,7 @@ export async function getAvailableSlots(
   const staffList = await prisma.staff.findMany({
     where: {
       isActive: true,
-      ...(staffId ? { id: staffId } : {}),
+      ...(staffId ? { id: staffId } : { overbook: false }), // helpers only when explicitly chosen
     },
   });
 
@@ -50,6 +50,16 @@ export async function getAvailableSlots(
   const results: { time: string; staffId: string; staffName: string }[] = [];
 
   for (const staff of staffList) {
+    // Helper "extra slot": bookable anytime within salon hours, no conflict checks
+    if (staff.overbook) {
+      let current = new Date(dayStart);
+      while (addMinutes(current, totalDuration) <= dayEnd) {
+        results.push({ time: beirutHHmm(current), staffId: staff.id, staffName: staff.name });
+        current = addMinutes(current, SLOT_INTERVAL);
+      }
+      continue;
+    }
+
     const staffDayOff = await prisma.dayOff.findFirst({
       where: { staffId: staff.id, date: dateOnly },
     });

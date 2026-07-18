@@ -47,6 +47,12 @@ model Staff {
   avatar       String?
   color        String        @default("#6366f1")
   isActive     Boolean       @default(true)
+  // Helper "extra slot" for a technician: bookable anytime with no conflict
+  // checks, shown grouped under its parent in the calendar.
+  overbook     Boolean       @default(false)
+  parentId     String?
+  parent       Staff?        @relation("StaffHelpers", fields: [parentId], references: [id])
+  helpers      Staff[]       @relation("StaffHelpers")
   appointments Appointment[]
   breaks       Break[]
   daysOff      DayOff[]
