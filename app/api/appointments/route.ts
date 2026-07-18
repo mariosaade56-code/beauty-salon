@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { sendWhatsAppMessage } from "@/lib/whatsapp";
-import { format } from "date-fns";
+import { parseSalonTime, beirutDayRange, beirutFormat } from "@/lib/timezone";
 
 export async function GET(req: NextRequest) {
   const user = await getSession();
@@ -17,17 +17,13 @@ export async function GET(req: NextRequest) {
 
   const where: Record<string, unknown> = {};
   if (from && to) {
-    // Range fetch (calendar week view); `to` is inclusive
+    // Range fetch (calendar week view); `to` is inclusive, Beirut days
     where.startTime = {
-      gte: new Date(new Date(from).toDateString()),
-      lt: new Date(new Date(new Date(to).toDateString()).getTime() + 86400000),
+      gte: beirutDayRange(from).gte,
+      lt: beirutDayRange(to).lt,
     };
   } else if (date) {
-    const d = new Date(date);
-    where.startTime = {
-      gte: new Date(d.toDateString()),
-      lt: new Date(d.getTime() + 86400000),
-    };
+    where.startTime = beirutDayRange(date);
   }
   if (status) where.status = status;
   if (staffId) where.staffId = staffId;
@@ -60,7 +56,7 @@ export async function POST(req: NextRequest) {
     }
 
     const created = [];
-    let cursor = new Date(startTime);
+    let cursor = parseSalonTime(startTime);
     for (const id of serviceIds) {
       const svc = byId[id];
       const end = new Date(cursor.getTime() + svc.duration * 60000);
@@ -84,7 +80,7 @@ export async function POST(req: NextRequest) {
 
     const first = created[0];
     const list = created.map((a) => `💅 ${a.service.name}`).join("\n");
-    const confirmMsg = `✅ Appointment Confirmed!\n\nHi ${client.name}! Your booking is set:\n\n${list}\n👤 ${first.staff?.name || "Any available staff"}\n📅 ${format(first.startTime, "EEEE, MMMM d, yyyy")}\n⏰ ${format(first.startTime, "h:mm a")}\n\nSee you soon! 💕`;
+    const confirmMsg = `✅ Appointment Confirmed!\n\nHi ${client.name}! Your booking is set:\n\n${list}\n👤 ${first.staff?.name || "Any available staff"}\n📅 ${beirutFormat(first.startTime, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}\n⏰ ${beirutFormat(first.startTime, { hour: "numeric", minute: "2-digit", hour12: true })}\n\nSee you soon! 💕`;
     await sendWhatsAppMessage(phone, confirmMsg).catch(console.error);
 
     return NextResponse.json({ appointments: created });
@@ -100,7 +96,7 @@ export async function POST(req: NextRequest) {
   const service = await prisma.service.findUnique({ where: { id: serviceId } });
   if (!service) return NextResponse.json({ error: "Service not found" }, { status: 400 });
 
-  const start = new Date(startTime);
+  const start = parseSalonTime(startTime);
   const end = new Date(start.getTime() + service.duration * 60000);
 
   // Upsert client
@@ -191,7 +187,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Send WhatsApp confirmation
-  const confirmMsg = `✅ Appointment Confirmed!\n\nHi ${client.name}! Your booking is set:\n\n💅 ${service.name}\n👤 ${appointment.staff?.name || "Any available staff"}\n📅 ${format(start, "EEEE, MMMM d, yyyy")}\n⏰ ${format(start, "h:mm a")}\n\nSee you soon! 💕`;
+  const confirmMsg = `✅ Appointment Confirmed!\n\nHi ${client.name}! Your booking is set:\n\n💅 ${service.name}\n👤 ${appointment.staff?.name || "Any available staff"}\n📅 ${beirutFormat(start, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}\n⏰ ${beirutFormat(start, { hour: "numeric", minute: "2-digit", hour12: true })}\n\nSee you soon! 💕`;
   await sendWhatsAppMessage(phone, confirmMsg).catch(console.error);
 
   return NextResponse.json(appointment);

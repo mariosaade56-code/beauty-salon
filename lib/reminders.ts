@@ -1,6 +1,8 @@
 import { prisma } from "./db";
 import { sendWhatsAppMessage } from "./whatsapp";
-import { format } from "date-fns";
+import { beirutFormat } from "./timezone";
+
+const timeOpts: Intl.DateTimeFormatOptions = { hour: "numeric", minute: "2-digit", hour12: true };
 
 export async function sendReminders() {
   const now = new Date();
@@ -18,7 +20,7 @@ export async function sendReminders() {
   });
 
   for (const appt of upcoming24) {
-    const msg = `Hi ${appt.client.name}! 👋\n\nReminder: You have an appointment tomorrow!\n\n💅 ${appt.service.name}\n👤 ${appt.staff?.name || "Any staff"}\n⏰ ${format(appt.startTime, "h:mm a")}\n\nSee you then! ✨`;
+    const msg = `Hi ${appt.client.name}! 👋\n\nReminder: You have an appointment tomorrow!\n\n💅 ${appt.service.name}\n👤 ${appt.staff?.name || "Any staff"}\n⏰ ${beirutFormat(appt.startTime, timeOpts)}\n\nSee you then! ✨`;
     await sendWhatsAppMessage(appt.client.phone, msg);
     await prisma.appointment.update({ where: { id: appt.id }, data: { reminderSent24h: true } });
   }
@@ -34,7 +36,7 @@ export async function sendReminders() {
   });
 
   for (const appt of upcoming1h) {
-    const msg = `⏰ Heads up ${appt.client.name}!\n\nYour appointment is in about 1 hour:\n\n💅 ${appt.service.name}\n⏰ ${format(appt.startTime, "h:mm a")}\n\nWe look forward to seeing you! 💕`;
+    const msg = `⏰ Heads up ${appt.client.name}!\n\nYour appointment is in about 1 hour:\n\n💅 ${appt.service.name}\n⏰ ${beirutFormat(appt.startTime, timeOpts)}\n\nWe look forward to seeing you! 💕`;
     await sendWhatsAppMessage(appt.client.phone, msg);
     await prisma.appointment.update({ where: { id: appt.id }, data: { reminderSent1h: true } });
   }
@@ -58,7 +60,7 @@ export async function sendReminders() {
     if (reminderDate <= now) {
       const dueDate = new Date(appt.startTime);
       dueDate.setDate(dueDate.getDate() + appt.service.reminderDays);
-      const msg = `Hi ${appt.client.name}! 💕\n\nIt's almost time for your next ${appt.service.name} session!\n\n📅 Your next session is recommended around ${format(dueDate, "MMMM d")}.\n\nBook now to secure your slot! ✨\nReply here or visit our website to book.`;
+      const msg = `Hi ${appt.client.name}! 💕\n\nIt's almost time for your next ${appt.service.name} session!\n\n📅 Your next session is recommended around ${beirutFormat(dueDate, { month: "long", day: "numeric" })}.\n\nBook now to secure your slot! ✨\nReply here or visit our website to book.`;
       await sendWhatsAppMessage(appt.client.phone, msg);
       await prisma.appointment.update({ where: { id: appt.id }, data: { rebookReminderSent: true } });
       sentRebook++;

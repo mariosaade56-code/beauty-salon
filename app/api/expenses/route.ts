@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
+import { beirutDayRange } from "@/lib/timezone";
 
 export async function GET(req: NextRequest) {
   await requireAdmin();
@@ -11,8 +12,8 @@ export async function GET(req: NextRequest) {
   const where: Record<string, unknown> = {};
   if (from && to) {
     where.date = {
-      gte: new Date(new Date(from).toDateString()),
-      lt: new Date(new Date(new Date(to).toDateString()).getTime() + 86400000),
+      gte: beirutDayRange(from).gte,
+      lt: beirutDayRange(to).lt,
     };
   }
 
