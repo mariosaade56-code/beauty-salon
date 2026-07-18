@@ -40,16 +40,33 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     include: { package: { include: { service: { select: { name: true } } } } },
   });
 
-  // Log the package sale in the client's transaction history
-  await prisma.clientTransaction.create({
-    data: {
-      clientId: id,
-      description: `${pkg.name} (${pkg.sessionCount} sessions)`,
-      amount: pkg.price,
-      paid: true,
-      reference: "Package",
-    },
-  });
+  // Log the package sale honestly: what was paid now, and any balance due
+  const status = body.paymentStatus === "PARTIAL" || body.paymentStatus === "UNPAID" ? body.paymentStatus : "PAID";
+  const paidAmount = status === "PAID" ? pkg.price : status === "PARTIAL" ? Math.min(parseFloat(body.amountPaid || "0") || 0, pkg.price) : 0;
+  const balance = pkg.price - paidAmount;
+
+  if (paidAmount > 0) {
+    await prisma.clientTransaction.create({
+      data: {
+        clientId: id,
+        description: `${pkg.name} (${pkg.sessionCount} sessions)${status === "PARTIAL" ? " (partial payment)" : ""}`,
+        amount: paidAmount,
+        paid: true,
+        reference: "Package",
+      },
+    });
+  }
+  if (balance > 0) {
+    await prisma.clientTransaction.create({
+      data: {
+        clientId: id,
+        description: `${pkg.name} (balance due)`,
+        amount: balance,
+        paid: false,
+        reference: "Package",
+      },
+    });
+  }
 
   return NextResponse.json(cp);
 }

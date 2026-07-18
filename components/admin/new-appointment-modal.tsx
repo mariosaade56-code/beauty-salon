@@ -28,6 +28,8 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
   const [packageId, setPackageId] = useState("");
   const [pkgInfo, setPkgInfo] = useState<{ remaining: number; total: number } | null>(null);
   const [unpaid, setUnpaid] = useState<number | null>(null);
+  const [pkgPayMode, setPkgPayMode] = useState<"PAID" | "PARTIAL" | "UNPAID">("PAID");
+  const [pkgPayAmount, setPkgPayAmount] = useState("");
   const [staff, setStaff] = useState<{ id: string; name: string }[]>([]);
   const [slots, setSlots] = useState<{ time: string; staffId: string; staffName: string }[]>([]);
   const [form, setForm] = useState({
@@ -128,6 +130,8 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
         email: form.email,
         serviceId: effectiveServiceId,
         packageId: selectedPackage?.id || null,
+        packagePaymentStatus: selectedPackage ? pkgPayMode : undefined,
+        packageAmountPaid: selectedPackage && pkgPayMode === "PARTIAL" ? pkgPayAmount : undefined,
         staffId: slot?.staffId || form.staffId || null,
         startTime: `${form.date}T${form.time}:00`,
         notes: form.notes,
@@ -230,9 +234,34 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
                   ✓ {linkedClient.name} has {pkgInfo.remaining} of {pkgInfo.total} sessions left — this booking uses 1 (then {pkgInfo.remaining - 1} left)
                 </p>
               ) : (
-                <p className="text-amber-700 text-xs font-medium">
-                  ⚠ {linkedClient.name} has no active {selectedPackage.name} — a new package (${selectedPackage.price}) will be assigned with this booking
-                </p>
+                <>
+                  <p className="text-amber-700 text-xs font-medium">
+                    ⚠ {linkedClient.name} has no active {selectedPackage.name} — a new package (${selectedPackage.price}) will be assigned with this booking
+                  </p>
+                  {/* How is the new package paid? */}
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {([
+                      { value: "PAID", label: `Paid in full ($${selectedPackage.price})` },
+                      { value: "PARTIAL", label: "Partially paid" },
+                      { value: "UNPAID", label: "Not paid" },
+                    ] as const).map((opt) => (
+                      <label key={opt.value}
+                        className={`flex items-center gap-1.5 border rounded-lg px-2.5 py-1.5 cursor-pointer text-xs font-medium transition-colors ${pkgPayMode === opt.value ? "border-pink-600 bg-pink-50 text-pink-700" : "border-gray-200 text-gray-600 hover:border-gray-300"}`}>
+                        <input type="radio" name="newpkgpay" checked={pkgPayMode === opt.value} onChange={() => setPkgPayMode(opt.value)} />
+                        {opt.label}
+                      </label>
+                    ))}
+                  </div>
+                  {pkgPayMode === "PARTIAL" && (
+                    <div className="flex items-center gap-2 pt-1">
+                      <Input type="number" step="0.01" min={0} className="h-8 max-w-[120px]"
+                        value={pkgPayAmount} onChange={(e) => setPkgPayAmount(e.target.value)} placeholder="Amount paid" />
+                      {pkgPayAmount && (
+                        <span className="text-xs text-amber-600">Balance due: ${(selectedPackage.price - parseFloat(pkgPayAmount || "0")).toFixed(2)}</span>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
               {linkedClient && unpaid !== null && unpaid > 0 && (
                 <p className="text-red-600 text-xs font-medium">Pending payment: ${unpaid.toFixed(2)} unpaid balance on {linkedClient.name}&apos;s account</p>

@@ -34,6 +34,8 @@ export default function ClientDetailPage() {
   const [showAddPkg, setShowAddPkg] = useState(false);
   const [selectedPkg, setSelectedPkg] = useState("");
   const [pkgNotes, setPkgNotes] = useState("");
+  const [pkgPayMode, setPkgPayMode] = useState<"PAID" | "PARTIAL" | "UNPAID">("PAID");
+  const [pkgPayAmount, setPkgPayAmount] = useState("");
   const [uploading, setUploading] = useState(false);
   const [photoDate, setPhotoDate] = useState(new Date().toISOString().slice(0, 10));
   const [photoNotes, setPhotoNotes] = useState("");
@@ -116,9 +118,15 @@ export default function ClientDetailPage() {
     await fetch(`/api/clients/${id}/packages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ packageId: selectedPkg, notes: pkgNotes }),
+      body: JSON.stringify({
+        packageId: selectedPkg,
+        notes: pkgNotes,
+        paymentStatus: pkgPayMode,
+        amountPaid: pkgPayMode === "PARTIAL" ? pkgPayAmount : undefined,
+      }),
     });
     setShowAddPkg(false); setSelectedPkg(""); setPkgNotes("");
+    setPkgPayMode("PAID"); setPkgPayAmount("");
     load();
   }
 
@@ -342,12 +350,39 @@ export default function ClientDetailPage() {
                     ))}
                   </Select>
                   <input
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-black"
                     placeholder="Notes (optional)"
                     value={pkgNotes}
                     onChange={(e) => setPkgNotes(e.target.value)}
                   />
-                  <Button type="submit">Assign</Button>
+                  {/* Payment for the package */}
+                  <div className="space-y-2">
+                    {([
+                      { value: "PAID", label: `Paid in full${selectedPkg ? ` ($${availablePackages.find((p) => p.id === selectedPkg)?.price ?? ""})` : ""}` },
+                      { value: "PARTIAL", label: "Partially paid" },
+                      { value: "UNPAID", label: "Not paid" },
+                    ] as const).map((opt) => (
+                      <label key={opt.value}
+                        className={`flex items-center gap-3 border rounded-xl px-4 py-2.5 cursor-pointer transition-colors ${pkgPayMode === opt.value ? "border-pink-600 bg-pink-50" : "border-gray-200 hover:border-gray-300"}`}>
+                        <input type="radio" name="pkgpay" checked={pkgPayMode === opt.value} onChange={() => setPkgPayMode(opt.value)} />
+                        <span className="text-sm font-medium text-gray-900">{opt.label}</span>
+                      </label>
+                    ))}
+                    {pkgPayMode === "PARTIAL" && (
+                      <div className="pl-1">
+                        <label className="block text-xs text-gray-500 mb-1">Amount paid ($)</label>
+                        <input type="number" step="0.01" min={0}
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-black"
+                          value={pkgPayAmount} onChange={(e) => setPkgPayAmount(e.target.value)} placeholder="e.g. 100" />
+                        {pkgPayAmount && selectedPkg && (
+                          <p className="text-xs text-amber-600 mt-1">
+                            Balance due: ${((availablePackages.find((p) => p.id === selectedPkg)?.price || 0) - parseFloat(pkgPayAmount || "0")).toFixed(2)}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <Button type="submit" disabled={pkgPayMode === "PARTIAL" && (!pkgPayAmount || parseFloat(pkgPayAmount) <= 0)}>Assign</Button>
                 </form>
               </CardContent>
             </Card>

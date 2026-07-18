@@ -133,16 +133,37 @@ export async function POST(req: NextRequest) {
         },
       });
       clientPackageId = created.id;
-      // Log the package sale in the client's transaction history
-      await prisma.clientTransaction.create({
-        data: {
-          clientId: client.id,
-          description: `${pkg.name} (${pkg.sessionCount} sessions)`,
-          amount: pkg.price,
-          paid: true,
-          reference: "Package",
-        },
-      });
+      // Log the package sale: paid amount now + balance due. Online bookings
+      // (no payment info) default to fully unpaid until collected at the salon.
+      const pStatus =
+        body.packagePaymentStatus === "PAID" || body.packagePaymentStatus === "PARTIAL"
+          ? body.packagePaymentStatus
+          : "UNPAID";
+      const paidAmount =
+        pStatus === "PAID" ? pkg.price : pStatus === "PARTIAL" ? Math.min(parseFloat(body.packageAmountPaid || "0") || 0, pkg.price) : 0;
+      const balance = pkg.price - paidAmount;
+      if (paidAmount > 0) {
+        await prisma.clientTransaction.create({
+          data: {
+            clientId: client.id,
+            description: `${pkg.name} (${pkg.sessionCount} sessions)${pStatus === "PARTIAL" ? " (partial payment)" : ""}`,
+            amount: paidAmount,
+            paid: true,
+            reference: "Package",
+          },
+        });
+      }
+      if (balance > 0) {
+        await prisma.clientTransaction.create({
+          data: {
+            clientId: client.id,
+            description: `${pkg.name} (balance due)`,
+            amount: balance,
+            paid: false,
+            reference: "Package",
+          },
+        });
+      }
     }
   }
 
