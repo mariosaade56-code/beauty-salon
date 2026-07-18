@@ -32,6 +32,7 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
   const [pkgPayAmount, setPkgPayAmount] = useState("");
   const [staff, setStaff] = useState<{ id: string; name: string }[]>([]);
   const [slots, setSlots] = useState<{ time: string; staffId: string; staffName: string }[]>([]);
+  const [slotsError, setSlotsError] = useState(false);
   const [form, setForm] = useState({
     clientName: "", phone: "", email: "",
     serviceId: "", staffId: initialStaffId || "", date: initialDate || format(new Date(), "yyyy-MM-dd"), time: "", notes: "",
@@ -76,9 +77,19 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
 
   useEffect(() => {
     if (effectiveServiceId && form.date) {
+      setSlotsError(false);
       const params = new URLSearchParams({ serviceId: effectiveServiceId, date: form.date });
       if (form.staffId) params.set("staffId", form.staffId);
-      fetch(`/api/availability?${params}`).then((r) => r.json()).then((d) => setSlots(Array.isArray(d) ? d : []));
+      fetch(`/api/availability?${params}`)
+        .then((r) => {
+          if (!r.ok) throw new Error("availability failed");
+          return r.json();
+        })
+        .then((d) => setSlots(Array.isArray(d) ? d : []))
+        .catch(() => {
+          setSlots([]);
+          setSlotsError(true);
+        });
     }
   }, [effectiveServiceId, form.date, form.staffId]);
 
@@ -299,7 +310,9 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
           </div>
           {effectiveServiceId && form.date && slots.length === 0 && (
             <p className="text-sm text-red-500">
-              {form.staffId
+              {slotsError
+                ? "Couldn't load available times — check the connection and change the date to retry"
+                : form.staffId
                 ? `${staff.find((s) => s.id === form.staffId)?.name || "This staff member"} is not available on this date — try another date or staff`
                 : "No available slots for this date"}
             </p>
