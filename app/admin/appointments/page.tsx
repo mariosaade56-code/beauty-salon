@@ -258,6 +258,11 @@ export default function AppointmentsPage() {
                         </p>
                         <p className="text-[10px] leading-tight truncate opacity-90">
                           {format(s, "h:mm")} · {a.service.name}
+                          {done && (a.clientPackageId
+                            ? " · Package"
+                            : a.paymentStatus === "PAID" ? " · Paid"
+                            : a.paymentStatus === "PARTIAL" ? ` · Partial $${a.amountPaid ?? 0}`
+                            : a.paymentStatus === "UNPAID" ? " · Unpaid" : "")}
                         </p>
                       </button>
                     );
@@ -304,9 +309,13 @@ export default function AppointmentsPage() {
                 </p>
               )}
               {detail.notes && <p className="text-gray-500 italic">{detail.notes}</p>}
-              <div className="flex gap-1.5 pt-1">
+              <div className="flex gap-1.5 pt-1 flex-wrap">
                 <Badge variant={statusColors[detail.status] || "outline"}>{detail.status}</Badge>
-                <PaymentBadge status={detail.paymentStatus} amountPaid={detail.amountPaid} price={detail.service.price} />
+                {detail.clientPackageId ? (
+                  <Badge variant="default">📦 Package session — paid via package</Badge>
+                ) : (
+                  <PaymentBadge status={detail.paymentStatus} amountPaid={detail.amountPaid} price={detail.service.price} />
+                )}
                 <Badge variant="outline">{detail.source}</Badge>
               </div>
             </div>
