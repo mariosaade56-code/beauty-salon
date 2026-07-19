@@ -19,7 +19,7 @@ export async function createSession(userId: string) {
 }
 
 // Admin sessions end after this much inactivity
-const ADMIN_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+const ADMIN_IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2 hours
 
 export async function getSession() {
   const cookieStore = await cookies();

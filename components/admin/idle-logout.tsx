@@ -2,8 +2,8 @@
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 
-const IDLE_MS = 5 * 60 * 1000; // log out after 5 minutes without activity
-const PING_MS = 2 * 60 * 1000; // while active, refresh the server session every 2 minutes
+const IDLE_MS = 2 * 60 * 60 * 1000; // log out after 2 hours without activity
+const PING_MS = 10 * 60 * 1000;    // while active, refresh the server session every 10 minutes
 
 export default function IdleLogout() {
   const router = useRouter();
