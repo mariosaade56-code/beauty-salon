@@ -76,8 +76,26 @@ export default function AppointmentsPage() {
   async function load() {
     const from = format(days[0], "yyyy-MM-dd");
     const to = format(days[days.length - 1], "yyyy-MM-dd");
-    const data = await fetch(`/api/appointments?from=${from}&to=${to}`).then((r) => r.json());
-    setAppointments(Array.isArray(data) ? data : []);
+    try {
+      const res = await fetch(`/api/appointments?from=${from}&to=${to}`);
+      const data = res.ok ? await res.json() : [];
+      setAppointments(Array.isArray(data) ? data : []);
+    } catch {
+      setAppointments([]);
+    }
+  }
+
+  // Staff drives the calendar columns — retry briefly so a hiccup doesn't
+  // leave the day view without its technician columns
+  async function loadStaff(attempt = 0) {
+    try {
+      const res = await fetch("/api/staff");
+      if (!res.ok) throw new Error("staff fetch failed");
+      const d = await res.json();
+      setStaffList(Array.isArray(d) ? d : []);
+    } catch {
+      if (attempt < 3) setTimeout(() => loadStaff(attempt + 1), 1000 * (attempt + 1));
+    }
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -85,8 +103,9 @@ export default function AppointmentsPage() {
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 60000);
-    fetch("/api/staff").then((r) => r.json()).then((d) => setStaffList(Array.isArray(d) ? d : []));
+    loadStaff();
     return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function updateStatus(id: string, status: string) {
@@ -124,9 +143,12 @@ export default function AppointmentsPage() {
   const nowTop = ((now.getHours() * 60 + now.getMinutes()) - OPEN * 60) / 60 * HOUR_PX;
   const nowVisible = now.getHours() >= OPEN && now.getHours() < CLOSE;
 
-  // Day view splits each column into staff lanes (technicians + their helpers)
-  const lanes = staffList; // already ordered Jacky, Jacky(2), Jennifer, Jennifer(2)
+  // Day view = one column per technician; her helper slot shares the same column
+  const lanes = staffList.filter((s) => !s.parentId); // real technicians only
   const laneCount = Math.max(lanes.length, 1);
+  // Map any staff (incl. helper slots) to its technician's column index
+  const laneIndexOf = new Map<string, number>();
+  staffList.forEach((s) => laneIndexOf.set(s.id, lanes.findIndex((l) => l.id === (s.parentId || s.id))));
 
   function timeFromClick(e: React.MouseEvent<HTMLDivElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -154,7 +176,7 @@ export default function AppointmentsPage() {
       .filter((a) => isSameDay(new Date(a.startTime), day))
       .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
 
-  // Week view: pack overlapping appointments into side-by-side lanes
+  // Pack overlapping appointments into side-by-side sub-lanes
   function packOverlaps(list: Appointment[]) {
     const laneEnds: number[] = [];
     const placed = list.map((a) => {
@@ -166,6 +188,23 @@ export default function AppointmentsPage() {
       return { a, lane };
     });
     return { placed, count: Math.max(laneEnds.length, 1) };
+  }
+
+  // Day view: group into technician columns, then pack overlaps inside each
+  // column so a helper-slot booking sits beside its technician's appointment
+  function dayLayout(list: Appointment[]) {
+    const byLane = new Map<number, Appointment[]>();
+    for (const a of list) {
+      const idx = a.staff ? (laneIndexOf.get(a.staff.id) ?? -1) : -1;
+      if (!byLane.has(idx)) byLane.set(idx, []);
+      byLane.get(idx)!.push(a);
+    }
+    const map = new Map<string, { laneIdx: number; sub: number; subCount: number }>();
+    for (const [laneIdx, appts] of byLane) {
+      const { placed, count } = packOverlaps(appts);
+      for (const { a, lane } of placed) map.set(a.id, { laneIdx, sub: lane, subCount: count });
+    }
+    return map;
   }
 
   function shiftNav(dir: number) {
@@ -247,6 +286,7 @@ export default function AppointmentsPage() {
             {days.map((day) => {
               const list = dayAppts(day);
               const week = view === "week" ? packOverlaps(list) : null;
+              const dayPos = view === "day" ? dayLayout(list) : null;
               return (
                 <div key={day.toISOString()}
                   className="relative border-l border-gray-100 cursor-pointer"
@@ -286,12 +326,16 @@ export default function AppointmentsPage() {
                     // Horizontal placement: staff lane (day view) or overlap lane (week view)
                     let leftStyle = "2px";
                     let widthCalc = "calc(100% - 4px)";
-                    if (view === "day") {
-                      const laneIdx = a.staff ? lanes.findIndex((l) => l.id === a.staff!.id) : -1;
-                      if (laneIdx >= 0) {
-                        const w = 100 / laneCount;
-                        leftStyle = `calc(${laneIdx * w}% + 2px)`;
-                        widthCalc = `calc(${w}% - 3px)`;
+                    if (view === "day" && dayPos) {
+                      const pos = dayPos.get(a.id);
+                      if (pos) {
+                        // Technician column, then the sub-lane inside it (helper
+                        // bookings sit beside their technician's appointment)
+                        const laneW = pos.laneIdx >= 0 ? 100 / laneCount : 100;
+                        const laneLeft = pos.laneIdx >= 0 ? pos.laneIdx * laneW : 0;
+                        const subW = laneW / pos.subCount;
+                        leftStyle = `calc(${laneLeft + pos.sub * subW}% + 2px)`;
+                        widthCalc = `calc(${subW}% - 3px)`;
                       }
                     } else if (week) {
                       const lane = week.placed.find((p) => p.a.id === a.id)!.lane;
