@@ -3,7 +3,10 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { format, addDays, startOfWeek, isSameDay, isToday } from "date-fns";
+import {
+  format, addDays, addMonths, startOfWeek, endOfWeek, startOfMonth, endOfMonth,
+  isSameDay, isSameMonth, isToday,
+} from "date-fns";
 import { ChevronLeft, ChevronRight, Plus, Phone, X, Trash2 } from "lucide-react";
 import NewAppointmentModal from "@/components/admin/new-appointment-modal";
 import PaymentBadge from "@/components/payment-badge";
@@ -24,6 +27,7 @@ interface Appointment {
 }
 
 interface StaffMember { id: string; name: string; color: string; overbook?: boolean; parentId?: string | null; }
+interface DayOff { date: string; allStaff: boolean; reason: string | null; }
 
 const statusColors: Record<string, "default" | "success" | "warning" | "destructive" | "outline"> = {
   CONFIRMED: "success",
@@ -49,11 +53,18 @@ function payTag(a: Appointment): string {
   return "";
 }
 
+const isDead = (a: Appointment) => a.status === "CANCELLED" || a.status === "NO_SHOW";
+const blockColor = (a: Appointment) =>
+  a.status === "CANCELLED" ? "#9ca3af" : a.staff?.color || "#9ca3af";
+const statusMark = (a: Appointment) =>
+  a.status === "COMPLETED" ? "✓ " : a.status === "NO_SHOW" ? "✗ " : a.status === "CANCELLED" ? "⊘ " : "";
+
 export default function AppointmentsPage() {
-  const [view, setView] = useState<"day" | "week">("week");
+  const [view, setView] = useState<"day" | "week" | "month">("week");
   const [anchor, setAnchor] = useState(new Date());
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
+  const [daysOff, setDaysOff] = useState<DayOff[]>([]);
   const [showNew, setShowNew] = useState(false);
   const [prefill, setPrefill] = useState<{ date: string; time: string; staffId?: string } | null>(null);
   const [detail, setDetail] = useState<Appointment | null>(null);
@@ -69,18 +80,23 @@ export default function AppointmentsPage() {
     if (typeof window !== "undefined" && window.innerWidth < 768) setView("day");
   }, []);
 
-  const HOUR_PX = view === "day" ? 88 : 60;
-  const days = view === "day"
-    ? [anchor]
-    : Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(anchor, { weekStartsOn: 1 }), i));
-  const rangeKey = `${format(days[0], "yyyy-MM-dd")}_${format(days[days.length - 1], "yyyy-MM-dd")}`;
+  const HOUR_PX = 88;
+  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(anchor, { weekStartsOn: 1 }), i));
+  const monthGridStart = startOfWeek(startOfMonth(anchor), { weekStartsOn: 1 });
+  const monthGridEnd = endOfWeek(endOfMonth(anchor), { weekStartsOn: 1 });
+  const monthDays = Array.from(
+    { length: Math.round((monthGridEnd.getTime() - monthGridStart.getTime()) / 86400000) + 1 },
+    (_, i) => addDays(monthGridStart, i)
+  );
+
+  const rangeStart = view === "day" ? anchor : view === "week" ? weekDays[0] : monthGridStart;
+  const rangeEnd = view === "day" ? anchor : view === "week" ? weekDays[6] : monthGridEnd;
+  const rangeKey = `${format(rangeStart, "yyyy-MM-dd")}_${format(rangeEnd, "yyyy-MM-dd")}`;
 
   async function load() {
-    const from = format(days[0], "yyyy-MM-dd");
-    const to = format(days[days.length - 1], "yyyy-MM-dd");
     try {
-      const res = await fetch(`/api/appointments?from=${from}&to=${to}`);
-      const data = res.ok ? await res.json() : [];
+      const res = await fetch(`/api/appointments?from=${format(rangeStart, "yyyy-MM-dd")}&to=${format(rangeEnd, "yyyy-MM-dd")}`);
+      const data = res.ok ? await res.json().catch(() => []) : [];
       setAppointments(Array.isArray(data) ? data : []);
     } catch {
       setAppointments([]);
@@ -107,30 +123,20 @@ export default function AppointmentsPage() {
     const t = setInterval(() => setNow(new Date()), 60000);
     loadStaff();
     fetch("/api/auth/me").then((r) => r.json()).then((u) => { if (u?.role) setRole(u.role); }).catch(() => {});
+    fetch("/api/daysoff").then((r) => (r.ok ? r.json() : [])).then((d) => setDaysOff(Array.isArray(d) ? d : [])).catch(() => {});
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function updateStatus(id: string, status: string) {
     await fetch(`/api/appointments/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) });
+    setDetail(null);
     load();
   }
 
   async function cancel(id: string) {
-    if (!confirm("Cancel this appointment?")) return;
+    if (!confirm("Cancel this appointment? It stays on the calendar marked as cancelled.")) return;
     await fetch(`/api/appointments/${id}`, { method: "DELETE" });
-    load();
-  }
-
-  // Admin only: wipe the record entirely, whatever its status
-  async function removeAppointment(a: Appointment) {
-    if (!confirm(`Permanently delete ${a.client.name}'s ${a.service.name} appointment?\n\nThis removes it from the calendar for good and cannot be undone.`)) return;
-    const res = await fetch(`/api/appointments/${a.id}?hard=1`, { method: "DELETE" });
-    if (!res.ok) {
-      const d = await res.json().catch(() => ({}));
-      alert(d.error || "Could not delete the appointment");
-      return;
-    }
     setDetail(null);
     load();
   }
@@ -153,46 +159,34 @@ export default function AppointmentsPage() {
     load();
   }
 
-  const active = appointments.filter((a) => a.status !== "CANCELLED");
-  const hours = Array.from({ length: CLOSE - OPEN + 1 }, (_, i) => OPEN + i);
-  const gridHeight = (CLOSE - OPEN) * HOUR_PX;
-  const nowTop = ((now.getHours() * 60 + now.getMinutes()) - OPEN * 60) / 60 * HOUR_PX;
-  const nowVisible = now.getHours() >= OPEN && now.getHours() < CLOSE;
+  // Admin only: wipe the record entirely, whatever its status
+  async function removeAppointment(a: Appointment) {
+    if (!confirm(`Permanently delete ${a.client.name}'s ${a.service.name} appointment?\n\nThis removes it from the calendar for good and cannot be undone.`)) return;
+    const res = await fetch(`/api/appointments/${a.id}?hard=1`, { method: "DELETE" });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      alert(d.error || "Could not delete the appointment");
+      return;
+    }
+    setDetail(null);
+    load();
+  }
 
-  // Day view = one column per technician; her helper slot shares the same column
-  const lanes = staffList.filter((s) => !s.parentId); // real technicians only
+  // Day view = one column per technician; her helper slot shares the column
+  const lanes = staffList.filter((s) => !s.parentId);
   const laneCount = Math.max(lanes.length, 1);
-  // Map any staff (incl. helper slots) to its technician's column index
   const laneIndexOf = new Map<string, number>();
   staffList.forEach((s) => laneIndexOf.set(s.id, lanes.findIndex((l) => l.id === (s.parentId || s.id))));
 
-  function timeFromClick(e: React.MouseEvent<HTMLDivElement>) {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const y = e.clientY - rect.top;
-    const mins = OPEN * 60 + Math.floor(((y / HOUR_PX) * 60) / 30) * 30;
-    const clamped = Math.min(Math.max(mins, OPEN * 60), CLOSE * 60 - 30);
-    return `${String(Math.floor(clamped / 60)).padStart(2, "0")}:${String(clamped % 60).padStart(2, "0")}`;
-  }
-
-  function dayClick(day: Date, e: React.MouseEvent<HTMLDivElement>) {
-    const time = timeFromClick(e);
-    let staffId: string | undefined;
-    if (lanes.length) {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const idx = Math.min(Math.floor((x / rect.width) * laneCount), laneCount - 1);
-      staffId = lanes[idx]?.id;
-    }
-    setPrefill({ date: format(day, "yyyy-MM-dd"), time, staffId });
-    setShowNew(true);
-  }
+  const cancelledCount = appointments.filter((a) => a.status === "CANCELLED").length;
+  const isClosed = (day: Date) =>
+    daysOff.some((d) => d.allStaff && isSameDay(new Date(d.date), day));
 
   const dayAppts = (day: Date) =>
-    active
+    appointments
       .filter((a) => isSameDay(new Date(a.startTime), day))
       .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
 
-  // Pack overlapping appointments into side-by-side sub-lanes
   function packOverlaps(list: Appointment[]) {
     const laneEnds: number[] = [];
     const placed = list.map((a) => {
@@ -206,8 +200,6 @@ export default function AppointmentsPage() {
     return { placed, count: Math.max(laneEnds.length, 1) };
   }
 
-  // Day view: group into technician columns, then pack overlaps inside each
-  // column so a helper-slot booking sits beside its technician's appointment
   function dayLayout(list: Appointment[]) {
     const byLane = new Map<number, Appointment[]>();
     for (const a of list) {
@@ -223,22 +215,71 @@ export default function AppointmentsPage() {
     return map;
   }
 
-  function shiftNav(dir: number) {
-    setAnchor(addDays(anchor, dir * (view === "day" ? 1 : 7)));
+  function timeFromClick(e: React.MouseEvent<HTMLDivElement>) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const mins = OPEN * 60 + Math.floor(((y / HOUR_PX) * 60) / 30) * 30;
+    const clamped = Math.min(Math.max(mins, OPEN * 60), CLOSE * 60 - 30);
+    return `${String(Math.floor(clamped / 60)).padStart(2, "0")}:${String(clamped % 60).padStart(2, "0")}`;
   }
 
-  const dateLabel = view === "day"
-    ? format(days[0], "EEEE, MMM d, yyyy")
-    : `${format(days[0], "MMM d")} – ${format(days[6], "MMM d, yyyy")}`;
+  function dayGridClick(day: Date, e: React.MouseEvent<HTMLDivElement>) {
+    const time = timeFromClick(e);
+    let staffId: string | undefined;
+    if (lanes.length) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const idx = Math.min(Math.floor((x / rect.width) * laneCount), laneCount - 1);
+      staffId = lanes[idx]?.id;
+    }
+    setPrefill({ date: format(day, "yyyy-MM-dd"), time, staffId });
+    setShowNew(true);
+  }
+
+  function newOn(day: Date) {
+    setPrefill({ date: format(day, "yyyy-MM-dd"), time: "" });
+    setShowNew(true);
+  }
+
+  function shiftNav(dir: number) {
+    if (view === "month") setAnchor(addMonths(anchor, dir));
+    else setAnchor(addDays(anchor, dir * (view === "day" ? 1 : 7)));
+  }
+
+  const dateLabel =
+    view === "day" ? format(anchor, "EEEE, MMM d, yyyy")
+    : view === "week" ? `${format(weekDays[0], "d MMM")} – ${format(weekDays[6], "d MMM yyyy")}`
+    : format(anchor, "MMMM yyyy");
+
+  const hours = Array.from({ length: CLOSE - OPEN + 1 }, (_, i) => OPEN + i);
+  const gridHeight = (CLOSE - OPEN) * HOUR_PX;
+  const nowTop = ((now.getHours() * 60 + now.getMinutes()) - OPEN * 60) / 60 * HOUR_PX;
+  const nowVisible = now.getHours() >= OPEN && now.getHours() < CLOSE;
+
+  // Compact chip used by the week cards and month grid
+  const Chip = ({ a }: { a: Appointment }) => (
+    <button type="button"
+      onClick={(e) => { e.stopPropagation(); setDetail(a); }}
+      className={`w-full text-left px-1.5 py-1 rounded border-l-[3px] bg-gray-50 hover:bg-gray-100 transition-colors ${isDead(a) ? "opacity-60" : ""}`}
+      style={{ borderLeftColor: blockColor(a) }}>
+      <p className={`text-[11px] leading-tight truncate ${a.status === "CANCELLED" ? "line-through text-gray-500" : "text-gray-900"}`}>
+        <span className="font-semibold">{format(new Date(a.startTime), "h:mm")}</span> {statusMark(a)}{a.client.name}
+      </p>
+    </button>
+  );
 
   return (
     <div className="p-3 md:p-6 space-y-3 md:space-y-4 flex flex-col h-full">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-xl md:text-2xl font-bold text-gray-900">Appointments</h1>
         <div className="flex items-center gap-2 flex-wrap">
-          {/* View toggle */}
+          {cancelledCount > 0 && (
+            <span className="flex items-center gap-1.5 text-sm text-red-600">
+              <span className="w-2 h-2 rounded-full bg-red-500" /> {cancelledCount} Cancelled
+            </span>
+          )}
           <div className="flex rounded-lg border border-gray-200 overflow-hidden">
-            {(["day", "week"] as const).map((v) => (
+            {(["day", "week", "month"] as const).map((v) => (
               <button key={v} onClick={() => setView(v)}
                 className={`px-3 py-1.5 text-sm font-medium capitalize transition-colors ${view === v ? "bg-pink-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>
                 {v}
@@ -257,138 +298,195 @@ export default function AppointmentsPage() {
       </div>
       <p className="text-sm font-semibold text-gray-700 -mt-1">{dateLabel}</p>
 
-      {/* Calendar grid */}
-      <div className="bg-white border border-gray-200 rounded-xl overflow-auto flex-1">
-        <div style={{ minWidth: view === "day" ? undefined : 48 + days.length * laneCount * 78 }}>
-          {/* Column headers */}
-          <div className="grid border-b border-gray-200 sticky top-0 bg-white z-20"
-            style={{ gridTemplateColumns: `48px repeat(${days.length}, 1fr)` }}>
-            <div />
-            {days.map((d) => (
-              <div key={d.toISOString()} className="pt-2 text-center border-l border-gray-100">
-                <p className="text-[11px] text-gray-500">{format(d, "EEE")}</p>
-                <p className={`text-base font-semibold w-8 h-8 mx-auto flex items-center justify-center rounded-full ${isToday(d) ? "bg-pink-600 text-white" : "text-gray-900"}`}>
-                  {format(d, "d")}
+      {/* ── DAY: time grid split by technician ───────────────────────── */}
+      {view === "day" && (
+        <div className="bg-white border border-gray-200 rounded-xl overflow-auto flex-1">
+          <div>
+            <div className="grid border-b border-gray-200 sticky top-0 bg-white z-20"
+              style={{ gridTemplateColumns: "48px 1fr" }}>
+              <div />
+              <div className="pt-2 text-center border-l border-gray-100">
+                <p className="text-[11px] text-gray-500">{format(anchor, "EEE")}</p>
+                <p className={`text-base font-semibold w-8 h-8 mx-auto flex items-center justify-center rounded-full ${isToday(anchor) ? "bg-pink-600 text-white" : "text-gray-900"}`}>
+                  {format(anchor, "d")}
                 </p>
-                {/* Technician sub-headers (both views) */}
                 {lanes.length > 0 && (
                   <div className="flex border-t border-gray-100 mt-1">
                     {lanes.map((s) => (
-                      <div key={s.id}
-                        className="flex-1 min-w-0 flex items-center justify-center gap-1 py-1.5 border-l border-gray-200 first:border-l-0">
-                        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />
-                        <span className="text-[10px] font-medium text-gray-600 truncate">
-                          {view === "day" ? s.name : s.name.split(" ")[0]}
+                      <div key={s.id} className="flex-1 min-w-0 flex items-center justify-center gap-1.5 py-2 border-l border-gray-200 first:border-l-0">
+                        <span className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold text-white flex-shrink-0"
+                          style={{ backgroundColor: s.color }}>
+                          {s.name.charAt(0)}
                         </span>
+                        <span className="text-[11px] font-medium text-gray-600 truncate">{s.name}</span>
                       </div>
                     ))}
                   </div>
                 )}
               </div>
-            ))}
-          </div>
-
-          {/* Time grid */}
-          <div className="grid" style={{ gridTemplateColumns: `48px repeat(${days.length}, 1fr)` }}>
-            {/* Hour gutter */}
-            <div className="relative" style={{ height: gridHeight }}>
-              {hours.map((h) => (
-                <span key={h}
-                  className="absolute right-1.5 text-[10px] text-gray-400 leading-none"
-                  style={{ top: Math.max((h - OPEN) * HOUR_PX - 4, 0) }}>
-                  {hourLabel(h)}
-                </span>
-              ))}
             </div>
 
-            {days.map((day) => {
+            <div className="grid" style={{ gridTemplateColumns: "48px 1fr" }}>
+              <div className="relative" style={{ height: gridHeight }}>
+                {hours.map((h) => (
+                  <span key={h} className="absolute right-1.5 text-[10px] text-gray-400 leading-none"
+                    style={{ top: Math.max((h - OPEN) * HOUR_PX - 4, 0) }}>
+                    {hourLabel(h)}
+                  </span>
+                ))}
+              </div>
+
+              {(() => {
+                const list = dayAppts(anchor);
+                const dayPos = dayLayout(list);
+                return (
+                  <div className="relative border-l border-gray-100 cursor-pointer"
+                    style={{ height: gridHeight }}
+                    onClick={(e) => dayGridClick(anchor, e)}>
+                    {hours.slice(0, -1).map((h) => (
+                      <div key={h}>
+                        <div className="absolute left-0 right-0 border-t border-gray-100" style={{ top: (h - OPEN) * HOUR_PX }} />
+                        <div className="absolute left-0 right-0 border-t border-gray-50" style={{ top: (h - OPEN) * HOUR_PX + HOUR_PX / 2 }} />
+                      </div>
+                    ))}
+                    {laneCount > 1 && lanes.slice(1).map((s, i) => (
+                      <div key={s.id} className="absolute top-0 bottom-0 pointer-events-none border-l border-gray-200"
+                        style={{ left: `${((i + 1) * 100) / laneCount}%` }} />
+                    ))}
+                    {isToday(anchor) && nowVisible && (
+                      <div className="absolute left-0 right-0 z-10 pointer-events-none" style={{ top: nowTop }}>
+                        <div className="border-t-2 border-red-500 relative">
+                          <div className="w-2.5 h-2.5 bg-red-500 rounded-full absolute -left-1 -top-[6px]" />
+                        </div>
+                      </div>
+                    )}
+                    {list.map((a) => {
+                      const s = new Date(a.startTime);
+                      const e = new Date(a.endTime);
+                      const top = ((s.getHours() * 60 + s.getMinutes()) - OPEN * 60) / 60 * HOUR_PX;
+                      const height = Math.max(((e.getTime() - s.getTime()) / 60000 / 60) * HOUR_PX, 30);
+                      let leftStyle = "2px";
+                      let widthCalc = "calc(100% - 4px)";
+                      const pos = dayPos.get(a.id);
+                      if (pos) {
+                        const laneW = pos.laneIdx >= 0 ? 100 / laneCount : 100;
+                        const laneLeft = pos.laneIdx >= 0 ? pos.laneIdx * laneW : 0;
+                        const subW = laneW / pos.subCount;
+                        leftStyle = `calc(${laneLeft + pos.sub * subW}% + 2px)`;
+                        widthCalc = `calc(${subW}% - 3px)`;
+                      }
+                      const tag = payTag(a);
+                      const showService = height >= 40;
+                      const showMeta = height >= 60;
+                      return (
+                        <button key={a.id} type="button"
+                          onClick={(ev) => { ev.stopPropagation(); setDetail(a); }}
+                          className={`absolute rounded-md px-1.5 py-1 text-left overflow-hidden text-white shadow-sm hover:shadow-md hover:z-10 transition-shadow ${isDead(a) ? "opacity-70" : ""}`}
+                          style={{ top, height, left: leftStyle, width: widthCalc, backgroundColor: blockColor(a) }}>
+                          <p className={`text-[11px] font-semibold leading-tight truncate ${a.status === "CANCELLED" ? "line-through" : ""}`}>
+                            {statusMark(a)}{a.client.name}
+                          </p>
+                          <p className="text-[10px] leading-tight truncate opacity-90">
+                            {format(s, "h:mm")}{showService ? ` · ${a.service.name}` : ""}
+                          </p>
+                          {showMeta && (
+                            <p className="text-[10px] leading-tight truncate opacity-80 mt-0.5">
+                              {a.staff?.name || "Any staff"}{tag ? ` · ${tag}` : a.service.price ? ` · $${a.service.price}` : ""}
+                            </p>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── WEEK: one card per day ───────────────────────────────────── */}
+      {view === "week" && (
+        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+          {weekDays.map((day) => {
+            const list = dayAppts(day);
+            const closed = isClosed(day);
+            const booked = list.filter((a) => a.status !== "CANCELLED").length;
+            return (
+              <div key={day.toISOString()}
+                className={`bg-white border rounded-xl p-3 min-h-[190px] flex flex-col ${isToday(day) ? "border-pink-400 ring-1 ring-pink-200" : "border-gray-200"}`}>
+                <div className="flex items-baseline justify-between">
+                  <p className="text-sm font-semibold text-gray-900">{format(day, "EEE d")}</p>
+                  <button onClick={() => newOn(day)} className="text-gray-300 hover:text-pink-600" title="New appointment">
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+                <p className={`text-xs mb-2 ${closed ? "text-red-500 font-medium" : "text-gray-500"}`}>
+                  {closed ? "Closed" : `${booked} booking${booked !== 1 ? "s" : ""}`}
+                </p>
+                <div className="space-y-1 flex-1 overflow-y-auto">
+                  {list.map((a) => <Chip key={a.id} a={a} />)}
+                  {!closed && list.length === 0 && (
+                    <button onClick={() => newOn(day)}
+                      className="w-full h-full min-h-[80px] rounded-lg border border-dashed border-gray-200 text-xs text-gray-300 hover:border-pink-300 hover:text-pink-500 transition-colors">
+                      —
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── MONTH: calendar grid ─────────────────────────────────────── */}
+      {view === "month" && (
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div className="grid grid-cols-7 border-b border-gray-200 bg-gray-50">
+            {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
+              <div key={d} className="py-2 text-center text-xs font-medium text-gray-500">{d}</div>
+            ))}
+          </div>
+          <div className="grid grid-cols-7">
+            {monthDays.map((day) => {
               const list = dayAppts(day);
-              const dayPos = dayLayout(list);
+              const inMonth = isSameMonth(day, anchor);
+              const closed = isClosed(day);
+              const shown = list.slice(0, 3);
               return (
                 <div key={day.toISOString()}
-                  className="relative border-l border-gray-100 cursor-pointer"
-                  style={{ height: gridHeight }}
-                  onClick={(e) => dayClick(day, e)}>
-                  {/* hour + half-hour lines */}
-                  {hours.slice(0, -1).map((h) => (
-                    <div key={h}>
-                      <div className="absolute left-0 right-0 border-t border-gray-100" style={{ top: (h - OPEN) * HOUR_PX }} />
-                      <div className="absolute left-0 right-0 border-t border-gray-50" style={{ top: (h - OPEN) * HOUR_PX + HOUR_PX / 2 }} />
-                    </div>
-                  ))}
-
-                  {/* dividers between technician lanes */}
-                  {laneCount > 1 && lanes.slice(1).map((s, i) => (
-                    <div key={s.id}
-                      className="absolute top-0 bottom-0 pointer-events-none border-l border-gray-200"
-                      style={{ left: `${((i + 1) * 100) / laneCount}%` }} />
-                  ))}
-
-                  {/* now indicator */}
-                  {isToday(day) && nowVisible && (
-                    <div className="absolute left-0 right-0 z-10 pointer-events-none" style={{ top: nowTop }}>
-                      <div className="border-t-2 border-red-500 relative">
-                        <div className="w-2.5 h-2.5 bg-red-500 rounded-full absolute -left-1 -top-[6px]" />
-                      </div>
+                  onClick={() => { setAnchor(day); setView("day"); }}
+                  className={`min-h-[104px] border-b border-r border-gray-100 p-1.5 cursor-pointer transition-colors hover:bg-pink-50/40 ${inMonth ? "" : "bg-gray-50/60"}`}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={`text-xs w-6 h-6 flex items-center justify-center rounded-full ${
+                      isToday(day) ? "bg-pink-600 text-white font-semibold" : inMonth ? "text-gray-900" : "text-gray-400"}`}>
+                      {format(day, "d")}
+                    </span>
+                    {list.length > 0 && (
+                      <span className="text-[10px] text-gray-400 font-medium">{list.length}</span>
+                    )}
+                  </div>
+                  {closed ? (
+                    <p className="text-[10px] text-red-500 px-1">Closed</p>
+                  ) : (
+                    <div className="space-y-0.5">
+                      {shown.map((a) => <Chip key={a.id} a={a} />)}
+                      {list.length > 3 && (
+                        <p className="text-[10px] text-gray-400 pl-1">+{list.length - 3} more</p>
+                      )}
                     </div>
                   )}
-
-                  {/* Appointment blocks */}
-                  {list.map((a) => {
-                    const s = new Date(a.startTime);
-                    const e = new Date(a.endTime);
-                    const top = ((s.getHours() * 60 + s.getMinutes()) - OPEN * 60) / 60 * HOUR_PX;
-                    const height = Math.max(((e.getTime() - s.getTime()) / 60000 / 60) * HOUR_PX, 30);
-
-                    // Technician column, then the sub-lane inside it (helper
-                    // bookings sit beside their technician's appointment)
-                    let leftStyle = "2px";
-                    let widthCalc = "calc(100% - 4px)";
-                    const pos = dayPos.get(a.id);
-                    if (pos) {
-                      const laneW = pos.laneIdx >= 0 ? 100 / laneCount : 100;
-                      const laneLeft = pos.laneIdx >= 0 ? pos.laneIdx * laneW : 0;
-                      const subW = laneW / pos.subCount;
-                      leftStyle = `calc(${laneLeft + pos.sub * subW}% + 2px)`;
-                      widthCalc = `calc(${subW}% - 3px)`;
-                    }
-
-                    const done = a.status === "COMPLETED";
-                    const noShow = a.status === "NO_SHOW";
-                    const tag = payTag(a);
-                    // Show more detail as the block gets taller
-                    const showService = height >= 40;
-                    const showMeta = height >= 60;
-                    return (
-                      <button key={a.id} type="button"
-                        onClick={(ev) => { ev.stopPropagation(); setDetail(a); }}
-                        className={`absolute rounded-md px-1.5 py-1 text-left overflow-hidden text-white shadow-sm hover:shadow-md hover:z-10 transition-shadow ${done || noShow ? "opacity-70" : ""}`}
-                        style={{ top, height, left: leftStyle, width: widthCalc, backgroundColor: a.staff?.color || "#9ca3af" }}>
-                        <p className="text-[11px] font-semibold leading-tight truncate">
-                          {done ? "✓ " : noShow ? "✗ " : ""}{a.client.name}
-                        </p>
-                        <p className="text-[10px] leading-tight truncate opacity-90">
-                          {format(s, "h:mm")}{showService ? ` · ${a.service.name}` : ""}
-                        </p>
-                        {showMeta && (
-                          <p className="text-[10px] leading-tight truncate opacity-80 mt-0.5">
-                            {a.staff?.name || "Any staff"}{tag ? ` · ${tag}` : a.service.price ? ` · $${a.service.price}` : ""}
-                          </p>
-                        )}
-                      </button>
-                    );
-                  })}
                 </div>
               );
             })}
           </div>
         </div>
-      </div>
+      )}
 
       {showNew && (
         <NewAppointmentModal
           initialDate={prefill?.date}
-          initialTime={prefill?.time}
+          initialTime={prefill?.time || undefined}
           initialStaffId={prefill?.staffId}
           onClose={() => { setShowNew(false); setPrefill(null); }}
           onCreated={() => { setShowNew(false); setPrefill(null); load(); }}
@@ -430,22 +528,31 @@ export default function AppointmentsPage() {
                 <Badge variant="outline">{detail.source}</Badge>
               </div>
             </div>
-            {detail.status === "CONFIRMED" && (
+
+            {/* Status actions — available whatever the current status */}
+            <div className="space-y-2">
               <div className="flex gap-2">
-                <Button size="sm" variant="secondary" className="flex-1" onClick={() => { const a = detail; setDetail(null); startComplete(a); }}>Done</Button>
-                <Button size="sm" variant="secondary" className="flex-1" onClick={() => { updateStatus(detail.id, "NO_SHOW"); setDetail(null); }}>No-show</Button>
-                <Button size="sm" variant="destructive" className="flex-1" onClick={() => { cancel(detail.id); setDetail(null); }}>Cancel</Button>
+                {detail.status !== "COMPLETED" && (
+                  <Button size="sm" variant="secondary" className="flex-1" onClick={() => { const a = detail; setDetail(null); startComplete(a); }}>Done</Button>
+                )}
+                {detail.status !== "NO_SHOW" && (
+                  <Button size="sm" variant="secondary" className="flex-1" onClick={() => updateStatus(detail.id, "NO_SHOW")}>No-show</Button>
+                )}
+                {detail.status !== "CANCELLED" ? (
+                  <Button size="sm" variant="destructive" className="flex-1" onClick={() => cancel(detail.id)}>Cancel</Button>
+                ) : (
+                  <Button size="sm" variant="outline" className="flex-1" onClick={() => updateStatus(detail.id, "CONFIRMED")}>Restore</Button>
+                )}
               </div>
-            )}
-            {/* Admins can remove any appointment outright, whatever its status */}
-            {isAdmin && (
-              <div className="border-t border-gray-100 pt-3">
-                <Button size="sm" variant="outline" className="w-full text-red-600 hover:text-red-700 hover:bg-red-50"
-                  onClick={() => removeAppointment(detail)}>
-                  <Trash2 className="w-4 h-4 mr-1.5" /> Delete appointment
-                </Button>
-              </div>
-            )}
+              {isAdmin && (
+                <div className="border-t border-gray-100 pt-2">
+                  <Button size="sm" variant="outline" className="w-full text-red-600 hover:text-red-700 hover:bg-red-50"
+                    onClick={() => removeAppointment(detail)}>
+                    <Trash2 className="w-4 h-4 mr-1.5" /> Delete appointment
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
