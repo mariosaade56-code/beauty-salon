@@ -41,6 +41,27 @@ export default function ClientDetailPage() {
   const [photoNotes, setPhotoNotes] = useState("");
   const [lightbox, setLightbox] = useState<Photo | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [role, setRole] = useState("STAFF");
+  const isAdmin = role === "ADMIN";
+
+  useEffect(() => {
+    fetch("/api/auth/me").then((r) => r.json()).then((u) => { if (u?.role) setRole(u.role); }).catch(() => {});
+  }, []);
+
+  // Admin only: remove the client and every record attached to them
+  async function deleteClient() {
+    if (!client) return;
+    const warn = `Permanently delete ${client.name}?\n\nThis also removes their appointments, transaction history, packages and photos. This cannot be undone.`;
+    if (!confirm(warn)) return;
+    if (!confirm(`Last check — delete ${client.name} and all their records?`)) return;
+    const res = await fetch(`/api/clients/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      alert(d.error || "Could not delete this client");
+      return;
+    }
+    router.push("/admin/clients");
+  }
 
   async function load() {
     const [c, cp, pkgs, ph, txs] = await Promise.all([
@@ -188,6 +209,12 @@ export default function ClientDetailPage() {
           <h1 className="text-xl md:text-2xl font-bold text-gray-900">{client.name}</h1>
           <p className="text-sm text-gray-500">{client.phone}{client.email ? ` · ${client.email}` : ""}</p>
         </div>
+        {isAdmin && (
+          <Button variant="outline" size="sm" className="ml-auto text-red-600 hover:text-red-700 hover:bg-red-50"
+            onClick={deleteClient}>
+            <Trash2 className="w-4 h-4 mr-1.5" /> Delete client
+          </Button>
+        )}
       </div>
 
       {/* Tabs */}

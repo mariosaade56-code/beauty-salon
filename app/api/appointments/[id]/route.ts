@@ -76,17 +76,31 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  await requireAuth();
+  const user = await requireAuth();
   const { id } = await params;
+  // ?hard=1 removes the record entirely (admin only). Without it, the
+  // appointment is just marked CANCELLED and stays in the history.
+  const hard = new URL(req.url).searchParams.get("hard") === "1";
+
+  if (hard && user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Only an admin can delete appointments" }, { status: 403 });
+  }
 
   const existing = await prisma.appointment.findUnique({ where: { id } });
-  await prisma.appointment.update({ where: { id }, data: { status: "CANCELLED" } });
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  if (existing?.clientPackageId && existing.status !== "CANCELLED") {
+  // Give the package session back if this booking was consuming one
+  if (existing.clientPackageId && existing.status !== "CANCELLED") {
     await prisma.clientPackage.update({
       where: { id: existing.clientPackageId },
       data: { sessionsUsed: { decrement: 1 } },
     });
+  }
+
+  if (hard) {
+    await prisma.appointment.delete({ where: { id } });
+  } else {
+    await prisma.appointment.update({ where: { id }, data: { status: "CANCELLED" } });
   }
 
   return NextResponse.json({ ok: true });

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { format, addDays, startOfWeek, isSameDay, isToday } from "date-fns";
-import { ChevronLeft, ChevronRight, Plus, Phone, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Phone, X, Trash2 } from "lucide-react";
 import NewAppointmentModal from "@/components/admin/new-appointment-modal";
 import PaymentBadge from "@/components/payment-badge";
 
@@ -61,6 +61,8 @@ export default function AppointmentsPage() {
   const [payMode, setPayMode] = useState<"PAID" | "PARTIAL" | "UNPAID">("PAID");
   const [payAmount, setPayAmount] = useState("");
   const [now, setNow] = useState(new Date());
+  const [role, setRole] = useState("STAFF");
+  const isAdmin = role === "ADMIN";
 
   // Day view is tighter — good default on phones
   useEffect(() => {
@@ -104,6 +106,7 @@ export default function AppointmentsPage() {
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 60000);
     loadStaff();
+    fetch("/api/auth/me").then((r) => r.json()).then((u) => { if (u?.role) setRole(u.role); }).catch(() => {});
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -116,6 +119,19 @@ export default function AppointmentsPage() {
   async function cancel(id: string) {
     if (!confirm("Cancel this appointment?")) return;
     await fetch(`/api/appointments/${id}`, { method: "DELETE" });
+    load();
+  }
+
+  // Admin only: wipe the record entirely, whatever its status
+  async function removeAppointment(a: Appointment) {
+    if (!confirm(`Permanently delete ${a.client.name}'s ${a.service.name} appointment?\n\nThis removes it from the calendar for good and cannot be undone.`)) return;
+    const res = await fetch(`/api/appointments/${a.id}?hard=1`, { method: "DELETE" });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      alert(d.error || "Could not delete the appointment");
+      return;
+    }
+    setDetail(null);
     load();
   }
 
@@ -419,6 +435,15 @@ export default function AppointmentsPage() {
                 <Button size="sm" variant="secondary" className="flex-1" onClick={() => { const a = detail; setDetail(null); startComplete(a); }}>Done</Button>
                 <Button size="sm" variant="secondary" className="flex-1" onClick={() => { updateStatus(detail.id, "NO_SHOW"); setDetail(null); }}>No-show</Button>
                 <Button size="sm" variant="destructive" className="flex-1" onClick={() => { cancel(detail.id); setDetail(null); }}>Cancel</Button>
+              </div>
+            )}
+            {/* Admins can remove any appointment outright, whatever its status */}
+            {isAdmin && (
+              <div className="border-t border-gray-100 pt-3">
+                <Button size="sm" variant="outline" className="w-full text-red-600 hover:text-red-700 hover:bg-red-50"
+                  onClick={() => removeAppointment(detail)}>
+                  <Trash2 className="w-4 h-4 mr-1.5" /> Delete appointment
+                </Button>
               </div>
             )}
           </div>
