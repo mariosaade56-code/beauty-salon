@@ -26,28 +26,43 @@ export default function ClientsPage() {
   const [showNew, setShowNew] = useState(false);
   const [newClient, setNewClient] = useState({ name: "", phone: "", email: "" });
   const [newError, setNewError] = useState("");
+  const [creating, setCreating] = useState(false);
 
   async function createClient(e: React.FormEvent) {
     e.preventDefault();
     setNewError("");
-    const res = await fetch("/api/clients", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newClient.name, phone: newClient.phone, email: newClient.email || null }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setNewError(data.error || "Something went wrong");
-      return;
+    setCreating(true);
+    try {
+      const res = await fetch("/api/clients", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newClient.name, phone: newClient.phone, email: newClient.email || null }),
+      });
+      // A dropped connection can return an empty body — don't let JSON parsing
+      // throw and leave the form looking like nothing happened
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.id) {
+        setNewError(data?.error || "Could not create the client — please try again.");
+        return;
+      }
+      setShowNew(false);
+      setNewClient({ name: "", phone: "", email: "" });
+      router.push(`/admin/clients/${data.id}`);
+    } catch {
+      setNewError("Connection problem — the client was not created. Please try again.");
+    } finally {
+      setCreating(false);
     }
-    setShowNew(false);
-    setNewClient({ name: "", phone: "", email: "" });
-    router.push(`/admin/clients/${data.id}`);
   }
 
   async function load(q = "") {
-    const data = await fetch(`/api/clients?search=${encodeURIComponent(q)}`).then((r) => r.json());
-    setClients(Array.isArray(data) ? data : []);
+    try {
+      const res = await fetch(`/api/clients?search=${encodeURIComponent(q)}`);
+      const data = res.ok ? await res.json().catch(() => []) : [];
+      setClients(Array.isArray(data) ? data : []);
+    } catch {
+      setClients([]);
+    }
   }
 
   useEffect(() => { load(); }, []);
@@ -109,7 +124,7 @@ export default function ClientsPage() {
               </div>
               {newError && <p className="text-sm text-red-500 md:col-span-3">{newError}</p>}
               <div className="md:col-span-3">
-                <Button type="submit">Create Client</Button>
+                <Button type="submit" disabled={creating}>{creating ? "Creating…" : "Create Client"}</Button>
               </div>
             </form>
           </CardContent>
