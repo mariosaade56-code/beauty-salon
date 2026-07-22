@@ -43,10 +43,36 @@ export default function ClientDetailPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [role, setRole] = useState("STAFF");
   const isAdmin = role === "ADMIN";
+  const [todos, setTodos] = useState<{ id: string; description: string; fromService: string | null; createdAt: string; doneAt: string | null }[]>([]);
+  const [newTodo, setNewTodo] = useState("");
+  const [addingTodo, setAddingTodo] = useState(false);
+
+  async function loadTodos() {
+    const d = await fetch(`/api/clients/${id}/pending`).then((r) => (r.ok ? r.json() : [])).catch(() => []);
+    setTodos(Array.isArray(d) ? d : []);
+  }
+
+  async function addTodo() {
+    if (!newTodo.trim()) return;
+    await fetch(`/api/clients/${id}/pending`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ description: newTodo.trim() }),
+    });
+    setNewTodo(""); setAddingTodo(false);
+    loadTodos();
+  }
+
+  async function markTodoDone(todoId: string) {
+    await fetch(`/api/pending/${todoId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: "{}" });
+    loadTodos();
+  }
 
   useEffect(() => {
     fetch("/api/auth/me").then((r) => r.json()).then((u) => { if (u?.role) setRole(u.role); }).catch(() => {});
-  }, []);
+    loadTodos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   // Admin only: remove the client and every record attached to them
   async function deleteClient() {
@@ -216,6 +242,51 @@ export default function ClientDetailPage() {
           </Button>
         )}
       </div>
+
+      {/* Still to do — unfinished work from a previous visit */}
+      {(() => {
+        const open = todos.filter((t) => !t.doneAt);
+        return (
+          <div className={`rounded-xl border-2 px-4 py-3 ${open.length ? "border-amber-300 bg-amber-50" : "border-gray-200 bg-gray-50"}`}>
+            <div className="flex items-center justify-between">
+              <p className={`text-sm font-semibold ${open.length ? "text-amber-900" : "text-gray-500"}`}>
+                {open.length ? `⚠ Still to do (${open.length})` : "Still to do — nothing pending"}
+              </p>
+              {!addingTodo && (
+                <Button size="sm" variant="outline" onClick={() => setAddingTodo(true)}>
+                  <Plus className="w-4 h-4 mr-1" /> Add
+                </Button>
+              )}
+            </div>
+            {addingTodo && (
+              <div className="flex gap-2 mt-2">
+                <input autoFocus className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-black"
+                  placeholder="e.g. legs — from Full Body Laser"
+                  value={newTodo} onChange={(e) => setNewTodo(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTodo(); } }} />
+                <Button size="sm" onClick={addTodo} disabled={!newTodo.trim()}>Save</Button>
+                <Button size="sm" variant="ghost" onClick={() => { setAddingTodo(false); setNewTodo(""); }}>Cancel</Button>
+              </div>
+            )}
+            {open.length > 0 && (
+              <ul className="mt-2 space-y-1.5">
+                {open.map((t) => (
+                  <li key={t.id} className="flex items-center justify-between gap-2 bg-white rounded-lg px-3 py-2">
+                    <span className="text-sm text-gray-900 min-w-0">
+                      <span className="font-medium">{t.description}</span>
+                      {t.fromService && <span className="text-gray-500"> — from {t.fromService}</span>}
+                      <span className="text-gray-400 text-xs"> · {format(new Date(t.createdAt), "MMM d, yyyy")}</span>
+                    </span>
+                    <Button size="sm" variant="outline" className="flex-shrink-0" onClick={() => markTodoDone(t.id)}>
+                      Mark done
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">

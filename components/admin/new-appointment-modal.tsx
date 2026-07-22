@@ -43,6 +43,7 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
   const [suggestions, setSuggestions] = useState<ClientSuggestion[]>([]);
   const [suggestFor, setSuggestFor] = useState<"name" | "phone" | null>(null);
   const [linkedClient, setLinkedClient] = useState<ClientSuggestion | null>(null);
+  const [todos, setTodos] = useState<{ id: string; description: string; fromService: string | null; createdAt: string }[]>([]);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function searchClients(query: string, field: "name" | "phone") {
@@ -65,6 +66,16 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
     setSuggestions([]);
     setSuggestFor(null);
   }
+
+  // Remind whoever is booking about anything this client left unfinished
+  useEffect(() => {
+    setTodos([]);
+    if (!linkedClient) return;
+    fetch(`/api/clients/${linkedClient.id}/pending`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d) => setTodos(Array.isArray(d) ? d.filter((x) => !x.doneAt) : []))
+      .catch(() => {});
+  }, [linkedClient]);
 
   // A package booking uses its underlying service for availability
   const selectedPackage = packageId ? packages.find((p) => p.id === packageId) || null : null;
@@ -241,6 +252,22 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
             <p className="text-xs text-green-600 flex items-center gap-1">
               <UserCheck className="w-3.5 h-3.5" /> Existing client — booking will be added to {linkedClient.name}&apos;s file
             </p>
+          )}
+          {/* Anything this client still has left from a previous visit */}
+          {todos.length > 0 && (
+            <div className="rounded-lg border-2 border-amber-300 bg-amber-50 px-3 py-2.5">
+              <p className="text-sm font-semibold text-amber-900 mb-1">
+                ⚠ {linkedClient?.name} still has {todos.length === 1 ? "something" : `${todos.length} things`} to do:
+              </p>
+              <ul className="space-y-0.5">
+                {todos.map((t) => (
+                  <li key={t.id} className="text-sm text-amber-900">
+                    • <span className="font-medium">{t.description}</span>
+                    {t.fromService ? <span className="text-amber-700"> — from {t.fromService}, {format(new Date(t.createdAt), "MMM d")}</span> : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>

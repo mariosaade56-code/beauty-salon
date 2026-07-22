@@ -13,6 +13,7 @@ import PaymentBadge from "@/components/payment-badge";
 
 interface Appointment {
   id: string;
+  clientId: string;
   startTime: string;
   endTime: string;
   status: string;
@@ -74,6 +75,10 @@ export default function AppointmentsPage() {
   const [now, setNow] = useState(new Date());
   const [role, setRole] = useState("STAFF");
   const isAdmin = role === "ADMIN";
+  // "Still to do" — work the client left unfinished
+  const [todoFor, setTodoFor] = useState<Appointment | null>(null);
+  const [todoText, setTodoText] = useState("");
+  const [payTodo, setPayTodo] = useState("");
 
   // Day view is tighter — good default on phones
   useEffect(() => {
@@ -155,8 +160,29 @@ export default function AppointmentsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "COMPLETED", paymentStatus: payMode, amountPaid }),
     });
+    if (payTodo.trim()) await saveTodo(payFor, payTodo);
+    setPayTodo("");
     setPayFor(null);
     load();
+  }
+
+  // Record what the client still has left from this visit
+  async function saveTodo(a: Appointment, text: string) {
+    const clientId = a.clientId;
+    if (!clientId) return;
+    await fetch(`/api/clients/${clientId}/pending`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ description: text.trim(), fromService: a.service.name, appointmentId: a.id }),
+    }).catch(() => {});
+  }
+
+  async function submitTodo() {
+    if (!todoFor || !todoText.trim()) return;
+    await saveTodo(todoFor, todoText);
+    setTodoText("");
+    setTodoFor(null);
+    setDetail(null);
   }
 
   // Admin only: wipe the record entirely, whatever its status
@@ -529,6 +555,28 @@ export default function AppointmentsPage() {
               </div>
             </div>
 
+            {/* Record something the client left unfinished */}
+            {todoFor?.id === detail.id ? (
+              <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-3 space-y-2">
+                <p className="text-sm font-medium text-amber-900">What is still to do for {detail.client.name}?</p>
+                <Input autoFocus value={todoText} onChange={(e) => setTodoText(e.target.value)}
+                  placeholder="e.g. legs" className="bg-white"
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); submitTodo(); } }} />
+                <p className="text-xs text-amber-700">
+                  It will show every time someone books {detail.client.name}, until it is marked done.
+                </p>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" className="flex-1" onClick={() => { setTodoFor(null); setTodoText(""); }}>Cancel</Button>
+                  <Button size="sm" className="flex-1" onClick={submitTodo} disabled={!todoText.trim()}>Save</Button>
+                </div>
+              </div>
+            ) : (
+              <Button size="sm" variant="outline" className="w-full border-amber-300 text-amber-700 hover:bg-amber-50"
+                onClick={() => { setTodoFor(detail); setTodoText(""); }}>
+                ⚠ Something still to do
+              </Button>
+            )}
+
             {/* Status actions — available whatever the current status */}
             <div className="space-y-2">
               <div className="flex gap-2">
@@ -590,8 +638,20 @@ export default function AppointmentsPage() {
                 </div>
               )}
             </div>
+            {/* Anything the client did not finish today */}
+            <div className="border-t border-gray-100 pt-3">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Anything still to do? <span className="font-normal text-gray-400">(leave empty if all done)</span>
+              </label>
+              <Input value={payTodo} onChange={(e) => setPayTodo(e.target.value)} placeholder="e.g. legs" />
+              {payTodo.trim() && (
+                <p className="text-xs text-amber-600 mt-1">
+                  Will be shown whenever {payFor.client.name} is booked, until marked done.
+                </p>
+              )}
+            </div>
             <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => setPayFor(null)}>Cancel</Button>
+              <Button variant="outline" className="flex-1" onClick={() => { setPayFor(null); setPayTodo(""); }}>Cancel</Button>
               <Button className="flex-1" onClick={confirmComplete}
                 disabled={payMode === "PARTIAL" && (!payAmount || parseFloat(payAmount) <= 0)}>
                 Complete

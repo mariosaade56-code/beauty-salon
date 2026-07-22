@@ -35,6 +35,11 @@ export default function DashboardPage() {
   const [to, setTo] = useState(todayStr);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [role, setRole] = useState<string>("ADMIN");
+  const [todos, setTodos] = useState<{ id: string; description: string; fromService: string | null; createdAt: string; client: { id: string; name: string } }[]>([]);
+
+  useEffect(() => {
+    fetch("/api/pending").then((r) => (r.ok ? r.json() : [])).then((d) => setTodos(Array.isArray(d) ? d : [])).catch(() => {});
+  }, []);
 
   useEffect(() => {
     fetch("/api/auth/me").then((r) => r.json()).then((u) => {
@@ -106,6 +111,30 @@ export default function DashboardPage() {
         {!isStaff && <StatCard icon={TrendingUp} label="Completed" value={completed.length} color="green" />}
         {!isStaff && <StatCard icon={DollarSign} label="Revenue" value={`$${revenue.toFixed(0)}`} color="purple" />}
       </div>
+
+      {/* Clients with unfinished work */}
+      {todos.length > 0 && (
+        <Card className="border-amber-300">
+          <CardHeader>
+            <CardTitle className="text-amber-900">⚠ Still to do ({todos.length})</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {todos.map((t) => (
+                <a key={t.id} href={`/admin/clients/${t.client.id}`}
+                  className="flex items-center justify-between gap-2 bg-amber-50 hover:bg-amber-100 transition-colors rounded-lg px-3 py-2">
+                  <span className="text-sm min-w-0">
+                    <span className="font-semibold text-gray-900">{t.client.name}</span>
+                    <span className="text-gray-700"> — {t.description}</span>
+                    {t.fromService && <span className="text-gray-500"> (from {t.fromService})</span>}
+                  </span>
+                  <span className="text-xs text-gray-400 flex-shrink-0">{format(new Date(t.createdAt), "MMM d")}</span>
+                </a>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Schedule */}
       <Card>

@@ -90,7 +90,21 @@ model Client {
   clientPackages  ClientPackage[]
   photos          ClientPhoto[]
   transactions    ClientTransaction[]
+  pendingWork     PendingWork[]
   createdAt       DateTime            @default(now())
+}
+
+// Work a client still owes from a visit — e.g. booked a full body laser
+// but left before the legs were done. Shown until someone marks it done.
+model PendingWork {
+  id            String    @id @default(cuid())
+  clientId      String
+  client        Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  appointmentId String?
+  fromService   String?
+  description   String
+  createdAt     DateTime  @default(now())
+  doneAt        DateTime?
 }
 
 model ClientTransaction {
