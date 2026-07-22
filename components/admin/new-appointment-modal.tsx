@@ -23,7 +23,8 @@ interface ClientSuggestion {
 }
 
 export default function NewAppointmentModal({ onClose, onCreated, initialDate, initialTime, initialStaffId }: Props) {
-  const [services, setServices] = useState<{ id: string; name: string; duration: number }[]>([]);
+  const [services, setServices] = useState<{ id: string; name: string; duration: number; price: number | null }[]>([]);
+  const [selectedServices, setSelectedServices] = useState<string[]>([]);
   const [packages, setPackages] = useState<{ id: string; name: string; serviceId: string; sessionCount: number; price: number; isActive: boolean }[]>([]);
   const [packageId, setPackageId] = useState("");
   const [pkgInfo, setPkgInfo] = useState<{ remaining: number; total: number } | null>(null);
@@ -35,7 +36,7 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
   const [slotsError, setSlotsError] = useState(false);
   const [form, setForm] = useState({
     clientName: "", phone: "", email: "",
-    serviceId: "", staffId: initialStaffId || "", date: initialDate || format(new Date(), "yyyy-MM-dd"), time: "", notes: "",
+    staffId: initialStaffId || "", date: initialDate || format(new Date(), "yyyy-MM-dd"), time: "", notes: "",
   });
   const appliedInitialTime = useRef(false);
   const [loading, setLoading] = useState(false);
@@ -67,7 +68,18 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
 
   // A package booking uses its underlying service for availability
   const selectedPackage = packageId ? packages.find((p) => p.id === packageId) || null : null;
-  const effectiveServiceId = selectedPackage ? selectedPackage.serviceId : form.serviceId;
+  // Services can be stacked: availability needs a slot fitting their combined time
+  const bookingServiceIds = selectedPackage ? [selectedPackage.serviceId] : selectedServices;
+  const effectiveServiceId = bookingServiceIds[0] || "";
+  const chosen = services.filter((s) => selectedServices.includes(s.id));
+  const totalDuration = chosen.reduce((sum, s) => sum + s.duration, 0);
+  const totalPrice = chosen.reduce((sum, s) => sum + (s.price || 0), 0);
+
+  function toggleService(id: string) {
+    setSelectedServices((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    setPackageId("");
+    setForm((f) => ({ ...f, time: "" }));
+  }
 
   useEffect(() => {
     fetch("/api/services").then((r) => r.json()).then(setServices);
@@ -76,9 +88,9 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
   }, []);
 
   useEffect(() => {
-    if (effectiveServiceId && form.date) {
+    if (bookingServiceIds.length > 0 && form.date) {
       setSlotsError(false);
-      const params = new URLSearchParams({ serviceId: effectiveServiceId, date: form.date });
+      const params = new URLSearchParams({ serviceIds: bookingServiceIds.join(","), date: form.date });
       if (form.staffId) params.set("staffId", form.staffId);
       fetch(`/api/availability?${params}`)
         .then((r) => {
@@ -90,8 +102,11 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
           setSlots([]);
           setSlotsError(true);
         });
+    } else {
+      setSlots([]);
     }
-  }, [effectiveServiceId, form.date, form.staffId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedServices, packageId, form.date, form.staffId]);
 
   // Preselect the clicked calendar slot once availability arrives
   useEffect(() => {
@@ -129,28 +144,45 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (!selectedPackage && selectedServices.length === 0) return alert("Please choose at least one service");
     if (!form.time) return alert("Please select a time slot");
     setLoading(true);
     const slot = slots.find((s) => s.time === form.time);
-    await fetch("/api/appointments", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        clientName: form.clientName,
-        phone: form.phone,
-        email: form.email,
-        serviceId: effectiveServiceId,
-        packageId: selectedPackage?.id || null,
-        packagePaymentStatus: selectedPackage ? pkgPayMode : undefined,
-        packageAmountPaid: selectedPackage && pkgPayMode === "PARTIAL" ? pkgPayAmount : undefined,
-        staffId: slot?.staffId || form.staffId || null,
-        startTime: `${form.date}T${form.time}:00`,
-        notes: form.notes,
-        source: "MANUAL",
-      }),
-    });
-    setLoading(false);
-    onCreated();
+    const base = {
+      clientName: form.clientName,
+      phone: form.phone,
+      email: form.email,
+      staffId: slot?.staffId || form.staffId || null,
+      startTime: `${form.date}T${form.time}:00`,
+      notes: form.notes,
+      source: "MANUAL",
+    };
+    try {
+      const res = await fetch("/api/appointments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          selectedPackage
+            ? {
+                ...base,
+                serviceId: selectedPackage.serviceId,
+                packageId: selectedPackage.id,
+                packagePaymentStatus: pkgPayMode,
+                packageAmountPaid: pkgPayMode === "PARTIAL" ? pkgPayAmount : undefined,
+              }
+            : { ...base, serviceIds: selectedServices }
+        ),
+      });
+      if (!res.ok) {
+        alert("Could not book the appointment — please try again.");
+        return;
+      }
+      onCreated();
+    } catch {
+      alert("Connection problem — the appointment was not booked.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -214,23 +246,47 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
             <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
             <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Service {!packageId && "*"}</label>
-              <Select required={!packageId} value={form.serviceId} disabled={!!packageId}
-                onChange={(e) => { setForm({ ...form, serviceId: e.target.value, time: "" }); setPackageId(""); }}>
-                <option value="">{packageId ? "— using package —" : "Select service"}</option>
-                {services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </Select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Package</label>
-              <Select value={packageId}
-                onChange={(e) => { setPackageId(e.target.value); setForm({ ...form, serviceId: "", time: "" }); }}>
-                <option value="">— None —</option>
-                {packages.map((p) => <option key={p.id} value={p.id}>📦 {p.name} ({p.sessionCount} sessions · ${p.price})</option>)}
-              </Select>
-            </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Services {!packageId && "*"}{" "}
+              <span className="font-normal text-gray-400">(tap to pick one or more)</span>
+            </label>
+            {packageId ? (
+              <p className="text-sm text-gray-500 border border-gray-200 rounded-lg px-3 py-2 bg-gray-50">— using package —</p>
+            ) : (
+              <>
+                <div className="border border-gray-200 rounded-lg max-h-44 overflow-y-auto divide-y divide-gray-50">
+                  {services.map((s) => {
+                    const on = selectedServices.includes(s.id);
+                    return (
+                      <button key={s.id} type="button" onClick={() => toggleService(s.id)}
+                        className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between transition-colors ${on ? "bg-pink-50 text-pink-800" : "hover:bg-gray-50 text-gray-800"}`}>
+                        <span>{on ? "✓ " : ""}{s.name}</span>
+                        <span className="text-xs text-gray-400 flex-shrink-0 ml-2">
+                          {s.duration}m{s.price ? ` · $${s.price}` : ""}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {chosen.length > 0 && (
+                  <div className="mt-1.5 flex items-center justify-between text-xs bg-sand/40 border border-gray-200 rounded-lg px-3 py-2">
+                    <span className="text-gray-700 truncate mr-2">
+                      {chosen.length} service{chosen.length > 1 ? "s" : ""} · {totalDuration} min
+                    </span>
+                    <span className="font-semibold text-gray-900 flex-shrink-0">${totalPrice}</span>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Package</label>
+            <Select value={packageId}
+              onChange={(e) => { setPackageId(e.target.value); setSelectedServices([]); setForm({ ...form, time: "" }); }}>
+              <option value="">— None —</option>
+              {packages.map((p) => <option key={p.id} value={p.id}>📦 {p.name} ({p.sessionCount} sessions · ${p.price})</option>)}
+            </Select>
           </div>
 
           {/* Client package status */}
