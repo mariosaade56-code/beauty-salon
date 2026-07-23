@@ -9,7 +9,6 @@ import {
 } from "date-fns";
 import { ChevronLeft, ChevronRight, Plus, Phone, X, Trash2 } from "lucide-react";
 import NewAppointmentModal from "@/components/admin/new-appointment-modal";
-import PaymentBadge from "@/components/payment-badge";
 
 interface Appointment {
   id: string;
@@ -79,6 +78,8 @@ export default function AppointmentsPage() {
   const [todoFor, setTodoFor] = useState<Appointment | null>(null);
   const [todoText, setTodoText] = useState("");
   const [payTodo, setPayTodo] = useState("");
+  // Payment dialog: "complete" also marks Done; "record" just logs a payment
+  const [payIntent, setPayIntent] = useState<"complete" | "record">("complete");
 
   // Day view is tighter — good default on phones
   useEffect(() => {
@@ -147,18 +148,34 @@ export default function AppointmentsPage() {
   }
 
   function startComplete(appt: Appointment) {
-    if (appt.clientPackageId || !appt.service.price) { updateStatus(appt.id, "COMPLETED"); return; }
-    setPayMode("PAID"); setPayAmount(""); setPayFor(appt);
+    // Package sessions, free services, or already-paid appointments just complete
+    if (appt.clientPackageId || !appt.service.price || appt.paymentStatus) {
+      updateStatus(appt.id, "COMPLETED");
+      return;
+    }
+    setPayIntent("complete"); setPayMode("PAID"); setPayAmount(""); setPayFor(appt);
   }
 
-  async function confirmComplete() {
+  // Record a payment on its own, without changing the appointment's status —
+  // e.g. the client pays today for Saturday. Works on any status.
+  function startRecordPayment(appt: Appointment) {
+    if (appt.clientPackageId || !appt.service.price) return;
+    setPayIntent("record");
+    setPayMode(appt.paymentStatus === "PARTIAL" || appt.paymentStatus === "UNPAID" ? appt.paymentStatus : "PAID");
+    setPayAmount(appt.amountPaid != null ? String(appt.amountPaid) : "");
+    setPayFor(appt);
+  }
+
+  async function confirmPayment() {
     if (!payFor) return;
     const price = payFor.service.price || 0;
     const amountPaid = payMode === "PAID" ? price : payMode === "PARTIAL" ? parseFloat(payAmount || "0") : 0;
+    const body: Record<string, unknown> = { paymentStatus: payMode, amountPaid };
+    if (payIntent === "complete") body.status = "COMPLETED";
     await fetch(`/api/appointments/${payFor.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "COMPLETED", paymentStatus: payMode, amountPaid }),
+      body: JSON.stringify(body),
     });
     if (payTodo.trim()) await saveTodo(payFor, payTodo);
     setPayTodo("");
@@ -546,14 +563,35 @@ export default function AppointmentsPage() {
               {detail.notes && <p className="text-gray-500 italic">{detail.notes}</p>}
               <div className="flex gap-1.5 pt-1 flex-wrap">
                 <Badge variant={statusColors[detail.status] || "outline"}>{detail.status}</Badge>
-                {detail.clientPackageId ? (
-                  <Badge variant="default">📦 Package session — paid via package</Badge>
-                ) : (
-                  <PaymentBadge status={detail.paymentStatus} amountPaid={detail.amountPaid} price={detail.service.price} />
-                )}
                 <Badge variant="outline">{detail.source}</Badge>
               </div>
             </div>
+
+            {/* Payment — recordable any time, even before the appointment or on a no-show */}
+            {detail.clientPackageId ? (
+              <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-600">
+                💳 Paid via package
+              </div>
+            ) : detail.service.price ? (
+              <div className="rounded-xl border border-gray-200 px-3 py-2.5 flex items-center justify-between gap-2">
+                <div className="text-sm">
+                  <span className="text-gray-500">Payment: </span>
+                  {detail.paymentStatus === "PAID" ? (
+                    <span className="font-semibold text-green-700">Paid ${detail.amountPaid ?? detail.service.price}</span>
+                  ) : detail.paymentStatus === "PARTIAL" ? (
+                    <span className="font-semibold text-amber-700">Partial ${detail.amountPaid ?? 0} of ${detail.service.price} · owes ${(detail.service.price - (detail.amountPaid ?? 0)).toFixed(0)}</span>
+                  ) : detail.paymentStatus === "UNPAID" ? (
+                    <span className="font-semibold text-red-600">Not paid · owes ${detail.service.price}</span>
+                  ) : (
+                    <span className="text-gray-400">not recorded</span>
+                  )}
+                </div>
+                <Button size="sm" variant="outline" className="flex-shrink-0"
+                  onClick={() => startRecordPayment(detail)}>
+                  {detail.paymentStatus ? "Update" : "Record payment"}
+                </Button>
+              </div>
+            ) : null}
 
             {/* Record something the client left unfinished */}
             {todoFor?.id === detail.id ? (
@@ -626,7 +664,9 @@ export default function AppointmentsPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Complete Appointment</h2>
+              <h2 className="text-lg font-semibold text-gray-900">
+                {payIntent === "record" ? "Record Payment" : "Complete Appointment"}
+              </h2>
               <p className="text-sm text-gray-500 mt-1">
                 {payFor.client.name} · {payFor.service.name} · <span className="font-semibold text-gray-900">${payFor.service.price}</span>
               </p>
@@ -654,23 +694,25 @@ export default function AppointmentsPage() {
                 </div>
               )}
             </div>
-            {/* Anything the client did not finish today */}
-            <div className="border-t border-gray-100 pt-3">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Anything still to do? <span className="font-normal text-gray-400">(leave empty if all done)</span>
-              </label>
-              <Input value={payTodo} onChange={(e) => setPayTodo(e.target.value)} placeholder="e.g. legs" />
-              {payTodo.trim() && (
-                <p className="text-xs text-amber-600 mt-1">
-                  Will be shown whenever {payFor.client.name} is booked, until marked done.
-                </p>
-              )}
-            </div>
+            {/* Anything the client did not finish today (only when completing) */}
+            {payIntent === "complete" && (
+              <div className="border-t border-gray-100 pt-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Anything still to do? <span className="font-normal text-gray-400">(leave empty if all done)</span>
+                </label>
+                <Input value={payTodo} onChange={(e) => setPayTodo(e.target.value)} placeholder="e.g. legs" />
+                {payTodo.trim() && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    Will be shown whenever {payFor.client.name} is booked, until marked done.
+                  </p>
+                )}
+              </div>
+            )}
             <div className="flex gap-3">
               <Button variant="outline" className="flex-1" onClick={() => { setPayFor(null); setPayTodo(""); }}>Cancel</Button>
-              <Button className="flex-1" onClick={confirmComplete}
+              <Button className="flex-1" onClick={confirmPayment}
                 disabled={payMode === "PARTIAL" && (!payAmount || parseFloat(payAmount) <= 0)}>
-                Complete
+                {payIntent === "record" ? "Save payment" : "Complete"}
               </Button>
             </div>
           </div>

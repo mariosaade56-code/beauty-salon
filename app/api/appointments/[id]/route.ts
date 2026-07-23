@@ -30,13 +30,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     });
   }
 
-  // Log the sale in the client's transaction history when a service is
-  // completed. Package sessions are skipped — the money was logged when
-  // the package was purchased.
+  // Log the sale in the client's transaction history the first time a
+  // payment is recorded — whether that happens at completion or in advance
+  // (a client who pays today for Saturday). Independent of attendance, so a
+  // paid no-show still shows the money. Package sessions are skipped — their
+  // money was logged when the package was purchased.
+  const paymentJustRecorded = !!body.paymentStatus && !existing?.paymentStatus;
   if (
-    body.status === "COMPLETED" &&
-    existing &&
-    existing.status !== "COMPLETED" &&
+    paymentJustRecorded &&
+    appointment &&
     !appointment.clientPackageId &&
     appointment.service.price
   ) {
