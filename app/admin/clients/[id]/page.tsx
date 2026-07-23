@@ -391,7 +391,7 @@ export default function ClientDetailPage() {
                       <tbody className="divide-y divide-gray-100">
                         {transactions.map((tx) => (
                           <tr key={tx.id} className="hover:bg-gray-50">
-                            <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{format(new Date(tx.date), "MMM d, yyyy")}</td>
+                            <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{format(new Date(tx.date), "d MMMM, yyyy")}</td>
                             <td className="px-3 py-2 font-medium text-gray-900">{tx.description}</td>
                             <td className="px-3 py-2 text-right font-medium text-gray-900">${tx.amount.toFixed(2)}</td>
                             <td className="px-3 py-2 text-center">

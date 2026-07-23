@@ -7,7 +7,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   const transactions = await prisma.clientTransaction.findMany({
     where: { clientId: id },
-    orderBy: { date: "desc" },
+    orderBy: { date: "asc" }, // oldest first
   });
   return NextResponse.json(transactions);
 }
