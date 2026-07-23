@@ -577,21 +577,37 @@ export default function AppointmentsPage() {
               </Button>
             )}
 
-            {/* Status actions — available whatever the current status */}
+            {/* Status actions — plain-language, current status highlighted */}
             <div className="space-y-2">
-              <div className="flex gap-2">
-                {detail.status !== "COMPLETED" && (
-                  <Button size="sm" variant="secondary" className="flex-1" onClick={() => { const a = detail; setDetail(null); startComplete(a); }}>Done</Button>
-                )}
-                {detail.status !== "NO_SHOW" && (
-                  <Button size="sm" variant="secondary" className="flex-1" onClick={() => updateStatus(detail.id, "NO_SHOW")}>No-show</Button>
-                )}
-                {detail.status !== "CANCELLED" ? (
-                  <Button size="sm" variant="destructive" className="flex-1" onClick={() => cancel(detail.id)}>Cancel</Button>
-                ) : (
-                  <Button size="sm" variant="outline" className="flex-1" onClick={() => updateStatus(detail.id, "CONFIRMED")}>Restore</Button>
-                )}
+              <p className="text-xs text-gray-400">What happened?</p>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { key: "COMPLETED", title: "Done", hint: "came & paid",
+                    active: "border-green-500 bg-green-50 text-green-700",
+                    onClick: () => { const a = detail; setDetail(null); startComplete(a); } },
+                  { key: "NO_SHOW", title: "No-show", hint: "didn't come",
+                    active: "border-gray-500 bg-gray-100 text-gray-800",
+                    onClick: () => updateStatus(detail.id, "NO_SHOW") },
+                  { key: "CANCELLED", title: "Cancelled", hint: "called off",
+                    active: "border-red-500 bg-red-50 text-red-700",
+                    onClick: () => cancel(detail.id) },
+                ].map((b) => {
+                  const on = detail.status === b.key;
+                  return (
+                    <button key={b.key} type="button" onClick={b.onClick}
+                      className={`rounded-xl border-2 py-2 px-1 text-center transition-colors ${on ? b.active : "border-gray-200 text-gray-600 hover:border-gray-300"}`}>
+                      <p className="text-sm font-semibold leading-tight">{on ? "✓ " : ""}{b.title}</p>
+                      <p className="text-[10px] leading-tight opacity-70">{b.hint}</p>
+                    </button>
+                  );
+                })}
               </div>
+              {detail.status !== "CONFIRMED" && (
+                <button type="button" onClick={() => updateStatus(detail.id, "CONFIRMED")}
+                  className="text-xs text-gray-400 hover:text-gray-600 underline">
+                  ↩ Reset to booked
+                </button>
+              )}
               {isAdmin && (
                 <div className="border-t border-gray-100 pt-2">
                   <Button size="sm" variant="outline" className="w-full text-red-600 hover:text-red-700 hover:bg-red-50"
