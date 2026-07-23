@@ -12,9 +12,15 @@ const services = [
 // Re-render at most once a minute so admin edits go live quickly
 export const revalidate = 60;
 
-async function getSettings() {
-  const rows = await prisma.setting.findMany();
-  return Object.fromEntries(rows.map((r) => [r.key, r.value]));
+// If the database is briefly unreachable (e.g. Neon asleep during a build)
+// the homepage still renders with its default text instead of failing.
+async function getSettings(): Promise<Record<string, string>> {
+  try {
+    const rows = await prisma.setting.findMany();
+    return Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  } catch {
+    return {};
+  }
 }
 
 export default async function HomePage() {
