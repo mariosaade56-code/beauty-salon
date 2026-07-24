@@ -8,7 +8,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const packages = await prisma.clientPackage.findMany({
     where: { clientId: id },
     include: {
-      package: { include: { service: { select: { name: true, category: true } } } },
+      package: {
+        include: {
+          service: { select: { name: true, category: true } },
+          services: { select: { id: true, name: true } },
+        },
+      },
       appointments: { select: { id: true, startTime: true, status: true } },
     },
     orderBy: { purchasedAt: "desc" },

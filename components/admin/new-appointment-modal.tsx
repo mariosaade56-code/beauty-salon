@@ -25,8 +25,10 @@ interface ClientSuggestion {
 export default function NewAppointmentModal({ onClose, onCreated, initialDate, initialTime, initialStaffId }: Props) {
   const [services, setServices] = useState<{ id: string; name: string; duration: number; price: number | null }[]>([]);
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
-  const [packages, setPackages] = useState<{ id: string; name: string; serviceId: string; sessionCount: number; price: number; isActive: boolean }[]>([]);
+  const [packages, setPackages] = useState<{ id: string; name: string; serviceId: string; sessionCount: number; price: number; isActive: boolean; services?: { id: string; name: string; duration: number }[] }[]>([]);
   const [packageId, setPackageId] = useState("");
+  // A package can cover several services — which one is this session for?
+  const [pkgServiceId, setPkgServiceId] = useState("");
   const [pkgInfo, setPkgInfo] = useState<{ remaining: number; total: number } | null>(null);
   const [unpaid, setUnpaid] = useState<number | null>(null);
   const [pkgPayMode, setPkgPayMode] = useState<"PAID" | "PARTIAL" | "UNPAID">("PAID");
@@ -79,8 +81,13 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
 
   // A package booking uses its underlying service for availability
   const selectedPackage = packageId ? packages.find((p) => p.id === packageId) || null : null;
+  const pkgServices = selectedPackage?.services?.length ? selectedPackage.services : null;
+  // Whichever of the package's services this session is for (defaults to the first)
+  const pkgSessionServiceId = selectedPackage
+    ? pkgServiceId || pkgServices?.[0]?.id || selectedPackage.serviceId
+    : "";
   // Services can be stacked: availability needs a slot fitting their combined time
-  const bookingServiceIds = selectedPackage ? [selectedPackage.serviceId] : selectedServices;
+  const bookingServiceIds = selectedPackage ? [pkgSessionServiceId] : selectedServices;
   const effectiveServiceId = bookingServiceIds[0] || "";
   const chosen = services.filter((s) => selectedServices.includes(s.id));
   const totalDuration = chosen.reduce((sum, s) => sum + s.duration, 0);
@@ -117,7 +124,7 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
       setSlots([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedServices, packageId, form.date, form.staffId]);
+  }, [selectedServices, packageId, pkgSessionServiceId, form.date, form.staffId]);
 
   // Preselect the clicked calendar slot once availability arrives
   useEffect(() => {
@@ -176,7 +183,7 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
           selectedPackage
             ? {
                 ...base,
-                serviceId: selectedPackage.serviceId,
+                serviceId: pkgSessionServiceId,
                 packageId: selectedPackage.id,
                 packagePaymentStatus: pkgPayMode,
                 packageAmountPaid: pkgPayMode === "PARTIAL" ? pkgPayAmount : undefined,
@@ -279,7 +286,24 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
               <span className="font-normal text-gray-400">(tap to pick one or more)</span>
             </label>
             {packageId ? (
-              <p className="text-sm text-gray-500 border border-gray-200 rounded-lg px-3 py-2 bg-gray-50">— using package —</p>
+              pkgServices && pkgServices.length > 1 ? (
+                // This package covers several services — pick the one for this session
+                <div className="border border-gray-200 rounded-lg overflow-hidden divide-y divide-gray-50">
+                  {pkgServices.map((s) => {
+                    const on = pkgSessionServiceId === s.id;
+                    return (
+                      <button key={s.id} type="button"
+                        onClick={() => { setPkgServiceId(s.id); setForm((f) => ({ ...f, time: "" })); }}
+                        className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between transition-colors ${on ? "bg-pink-50 text-pink-800" : "hover:bg-gray-50 text-gray-800"}`}>
+                        <span>{on ? "✓ " : ""}{s.name}</span>
+                        <span className="text-xs text-gray-400 flex-shrink-0 ml-2">{s.duration}m</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500 border border-gray-200 rounded-lg px-3 py-2 bg-gray-50">— using package —</p>
+              )
             ) : (
               <>
                 <div className="border border-gray-200 rounded-lg max-h-44 overflow-y-auto divide-y divide-gray-50">
@@ -310,10 +334,15 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Package</label>
             <Select value={packageId}
-              onChange={(e) => { setPackageId(e.target.value); setSelectedServices([]); setForm({ ...form, time: "" }); }}>
+              onChange={(e) => { setPackageId(e.target.value); setPkgServiceId(""); setSelectedServices([]); setForm({ ...form, time: "" }); }}>
               <option value="">— None —</option>
               {packages.map((p) => <option key={p.id} value={p.id}>📦 {p.name} ({p.sessionCount} sessions · ${p.price})</option>)}
             </Select>
+            {pkgServices && pkgServices.length > 1 && (
+              <p className="text-xs text-gray-500 mt-1">
+                Covers {pkgServices.length} services — choose above which one this session is for.
+              </p>
+            )}
           </div>
 
           {/* Client package status */}

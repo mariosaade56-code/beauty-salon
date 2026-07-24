@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Plus, X, Pencil, Package, Users, ChevronDown, ChevronUp } from "lucide-react";
 import { format } from "date-fns";
@@ -18,10 +17,11 @@ interface Pkg {
   id: string; name: string; sessionCount: number; price: number;
   validityDays: number; isActive: boolean;
   service: { name: string; category: string };
+  services?: { id: string; name: string }[];
   clientPackages: Buyer[];
 }
 
-const blank = { name: "", serviceId: "", sessionCount: 4, price: "", validityDays: 365 };
+const blank = { name: "", serviceIds: [] as string[], sessionCount: 4, price: "", validityDays: 365 };
 
 export default function PackagesPage() {
   const router = useRouter();
@@ -43,8 +43,16 @@ export default function PackagesPage() {
 
   useEffect(() => { load(); }, []);
 
+  function toggleService(id: string) {
+    setForm((f) => ({
+      ...f,
+      serviceIds: f.serviceIds.includes(id) ? f.serviceIds.filter((x) => x !== id) : [...f.serviceIds, id],
+    }));
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (form.serviceIds.length === 0) return alert("Please choose at least one service for this package");
     const body = { ...form, price: parseFloat(form.price as string) };
     if (editId) {
       await fetch(`/api/packages/${editId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -55,7 +63,13 @@ export default function PackagesPage() {
   }
 
   function startEdit(p: Pkg) {
-    setForm({ name: p.name, serviceId: "", sessionCount: p.sessionCount, price: p.price.toString(), validityDays: p.validityDays });
+    setForm({
+      name: p.name,
+      serviceIds: p.services?.map((s) => s.id) ?? [],
+      sessionCount: p.sessionCount,
+      price: p.price.toString(),
+      validityDays: p.validityDays,
+    });
     setEditId(p.id); setShowForm(true);
   }
 
@@ -90,15 +104,28 @@ export default function PackagesPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Package Name *</label>
                 <Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. 4 Laser Sessions" />
               </div>
-              {!editId && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Service *</label>
-                  <Select value={form.serviceId} onChange={(e) => setForm({ ...form, serviceId: e.target.value })} required={!editId}>
-                    <option value="">Select service…</option>
-                    {services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </Select>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Services in this package * <span className="font-normal text-gray-400">(tick every service the sessions can be used for)</span>
+                </label>
+                <div className="border border-gray-200 rounded-xl max-h-56 overflow-y-auto divide-y divide-gray-100">
+                  {services.map((s) => (
+                    <label key={s.id} className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-pink-50">
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 accent-pink-600"
+                        checked={form.serviceIds.includes(s.id)}
+                        onChange={() => toggleService(s.id)}
+                      />
+                      <span className="text-sm text-gray-900">{s.name}</span>
+                      <span className="text-xs text-gray-400 ml-auto">{s.category}</span>
+                    </label>
+                  ))}
                 </div>
-              )}
+                {form.serviceIds.length > 0 && (
+                  <p className="text-xs text-gray-500 mt-1">{form.serviceIds.length} service{form.serviceIds.length !== 1 ? "s" : ""} selected</p>
+                )}
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Number of Sessions *</label>
                 <Input type="number" required min={1} value={form.sessionCount} onChange={(e) => setForm({ ...form, sessionCount: parseInt(e.target.value) })} />
@@ -133,8 +160,13 @@ export default function PackagesPage() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="font-semibold text-gray-900">{p.name}</p>
-                  <p className="text-sm text-gray-500">{p.service.name} · {p.sessionCount} sessions · ${p.price}</p>
-                  <p className="text-xs text-gray-400">Valid {p.validityDays} days</p>
+                  <p className="text-sm text-gray-500">{p.sessionCount} sessions · ${p.price}</p>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {(p.services?.length ? p.services : [{ id: "primary", name: p.service.name }]).map((s) => (
+                      <span key={s.id} className="text-xs bg-pink-50 text-pink-700 rounded-full px-2 py-0.5">{s.name}</span>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">Valid {p.validityDays} days</p>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <Badge variant={p.isActive ? "success" : "outline"}>{p.isActive ? "Active" : "Off"}</Badge>

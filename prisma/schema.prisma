@@ -72,7 +72,8 @@ model Service {
   isActive     Boolean       @default(true)
   reminderDays Int?
   appointments Appointment[]
-  packages     Package[]
+  packages     Package[]     @relation("PackagePrimaryService")
+  inPackages   Package[]     @relation("PackageServices")
   createdAt    DateTime      @default(now())
 }
 
@@ -172,8 +173,11 @@ enum BookingSource {
 model Package {
   id             String          @id @default(cuid())
   name           String
+  // Primary service — kept for existing bookings and as the default session
   serviceId      String
-  service        Service         @relation(fields: [serviceId], references: [id])
+  service        Service         @relation("PackagePrimaryService", fields: [serviceId], references: [id])
+  // Every service this package covers; a session can be any one of them
+  services       Service[]       @relation("PackageServices")
   sessionCount   Int
   price          Float
   validityDays   Int             @default(365)

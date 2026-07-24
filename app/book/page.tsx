@@ -12,7 +12,7 @@ import Butterfly from "@/components/butterfly";
 interface Service { id: string; name: string; category: string; duration: number; price: number | null; description: string | null; }
 interface Staff { id: string; name: string; color: string; }
 interface Slot { time: string; staffId: string; staffName: string; }
-interface Pkg { id: string; name: string; price: number; sessionCount: number; serviceId: string; service: { name: string; duration: number }; }
+interface Pkg { id: string; name: string; price: number; sessionCount: number; serviceId: string; service: { name: string; duration: number }; services?: { id: string; name: string; duration: number }[]; }
 
 function BookingForm() {
   const searchParams = useSearchParams();
@@ -30,6 +30,8 @@ function BookingForm() {
   const [selected, setSelected] = useState<string[]>([]);
   const [packages, setPackages] = useState<Pkg[]>([]);
   const [selectedPkg, setSelectedPkg] = useState<string | null>(null);
+  // When a package covers several services, which one this first session is for
+  const [pkgServiceId, setPkgServiceId] = useState("");
 
   function toggleService(id: string) {
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -37,9 +39,10 @@ function BookingForm() {
     setForm((f) => ({ ...f, time: "" }));
   }
 
-  // A package books on its own (one session of its service)
+  // A package books on its own (one session of one of its services)
   function togglePackage(id: string) {
     setSelectedPkg((prev) => (prev === id ? null : id));
+    setPkgServiceId("");
     setSelected([]);
     setForm((f) => ({ ...f, time: "" }));
   }
@@ -76,7 +79,12 @@ function BookingForm() {
   }, [searchParams, services]);
 
   const activePkg = packages.find((p) => p.id === selectedPkg) || null;
-  const bookingServiceIds = activePkg ? [activePkg.serviceId] : selected;
+  const pkgServices = activePkg?.services?.length ? activePkg.services : null;
+  const pkgSessionService = activePkg
+    ? pkgServices?.find((s) => s.id === pkgServiceId) || pkgServices?.[0] || null
+    : null;
+  const pkgSessionServiceId = activePkg ? pkgSessionService?.id || activePkg.serviceId : "";
+  const bookingServiceIds = activePkg ? [pkgSessionServiceId] : selected;
 
   useEffect(() => {
     if (bookingServiceIds.length > 0) {
@@ -90,7 +98,7 @@ function BookingForm() {
       setSlots([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, selectedPkg, form.staffId, selectedDate]);
+  }, [selected, selectedPkg, pkgSessionServiceId, form.staffId, selectedDate]);
 
   async function submit() {
     setSubmitting(true);
@@ -107,7 +115,7 @@ function BookingForm() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(
         activePkg
-          ? { ...base, serviceId: activePkg.serviceId, packageId: activePkg.id }
+          ? { ...base, serviceId: pkgSessionServiceId, packageId: activePkg.id }
           : { ...base, serviceIds: selected }
       ),
     });
@@ -133,7 +141,9 @@ function BookingForm() {
 
   const selectedServices = services.filter((s) => selected.includes(s.id));
   const totalPrice = activePkg ? activePkg.price : selectedServices.reduce((sum, s) => sum + (s.price || 0), 0);
-  const totalDuration = activePkg ? activePkg.service.duration : selectedServices.reduce((sum, s) => sum + s.duration, 0);
+  const totalDuration = activePkg
+    ? pkgSessionService?.duration ?? activePkg.service.duration
+    : selectedServices.reduce((sum, s) => sum + s.duration, 0);
   const cleanName = (n: string) => n.replace(" (Women)", "").replace(" (Men)", "");
 
   return (
@@ -175,15 +185,34 @@ function BookingForm() {
                     <div className="grid grid-cols-1 gap-2 p-3 pt-0">
                       {packages.map((p) => {
                         const isSelected = selectedPkg === p.id;
+                        const covers = p.services?.length ? p.services : [{ id: p.serviceId, name: p.service.name, duration: p.service.duration }];
                         return (
-                          <button key={p.id} type="button"
-                            onClick={() => togglePackage(p.id)}
-                            className={`p-3 rounded-lg border-2 text-left transition-all ${isSelected ? "border-charcoal bg-sand/40" : "border-sand bg-cream hover:border-taupe"}`}>
-                            <p className="font-medium text-charcoal text-sm">{isSelected ? "✓ " : ""}{p.name}</p>
-                            <p className="text-xs text-charcoal/50">
-                              {p.sessionCount} sessions of {p.service.name} · ${p.price} — first session booked now
-                            </p>
-                          </button>
+                          <div key={p.id}
+                            className={`rounded-lg border-2 transition-all ${isSelected ? "border-charcoal bg-sand/40" : "border-sand bg-cream hover:border-taupe"}`}>
+                            <button type="button" onClick={() => togglePackage(p.id)} className="w-full p-3 text-left">
+                              <p className="font-medium text-charcoal text-sm">{isSelected ? "✓ " : ""}{p.name}</p>
+                              <p className="text-xs text-charcoal/50">
+                                {p.sessionCount} sessions · ${p.price} — first session booked now
+                              </p>
+                              <p className="text-xs text-charcoal/40 mt-0.5">
+                                Use on: {covers.map((s) => cleanName(s.name)).join(", ")}
+                              </p>
+                            </button>
+                            {isSelected && covers.length > 1 && (
+                              <div className="px-3 pb-3">
+                                <p className="text-xs text-charcoal/60 mb-1.5">Which one for this first session?</p>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {covers.map((s) => (
+                                    <button key={s.id} type="button"
+                                      onClick={() => { setPkgServiceId(s.id); setForm((f) => ({ ...f, time: "" })); }}
+                                      className={`text-xs rounded-full px-3 py-1.5 border transition-colors ${pkgSessionServiceId === s.id ? "bg-charcoal text-cream border-charcoal" : "bg-cream border-sand text-charcoal/70 hover:border-taupe"}`}>
+                                      {cleanName(s.name)}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         );
                       })}
                     </div>

@@ -88,10 +88,20 @@ export async function POST(req: NextRequest) {
 
   if (Array.isArray(serviceIds) && serviceIds.length === 1) serviceId = serviceIds[0];
 
-  // If booking against a package, the service comes from the package
-  const pkg = packageId ? await prisma.package.findUnique({ where: { id: packageId } }) : null;
+  // If booking against a package, the service must be one the package covers.
+  // Packages can cover several services, so honour the chosen one and fall
+  // back to the package's primary service.
+  const pkg = packageId
+    ? await prisma.package.findUnique({
+        where: { id: packageId },
+        include: { services: { select: { id: true } } },
+      })
+    : null;
   if (packageId && !pkg) return NextResponse.json({ error: "Package not found" }, { status: 400 });
-  if (pkg) serviceId = pkg.serviceId;
+  if (pkg) {
+    const covered = new Set([pkg.serviceId, ...pkg.services.map((s) => s.id)]);
+    serviceId = serviceId && covered.has(serviceId) ? serviceId : pkg.serviceId;
+  }
 
   const service = await prisma.service.findUnique({ where: { id: serviceId } });
   if (!service) return NextResponse.json({ error: "Service not found" }, { status: 400 });

@@ -19,6 +19,7 @@ export async function GET(req: Request) {
         validityDays: true,
         serviceId: true,
         service: { select: { name: true, duration: true } },
+        services: { select: { id: true, name: true, duration: true } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -28,6 +29,7 @@ export async function GET(req: Request) {
   const packages = await prisma.package.findMany({
     include: {
       service: { select: { name: true, category: true } },
+      services: { select: { id: true, name: true, duration: true, category: true } },
       clientPackages: {
         include: { client: { select: { id: true, name: true, phone: true } } },
         orderBy: { purchasedAt: "desc" },
@@ -41,15 +43,23 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   await requireAdmin();
   const body = await req.json();
+  // A package can cover several services; the first is kept as the primary
+  const ids: string[] = Array.isArray(body.serviceIds) && body.serviceIds.length
+    ? body.serviceIds
+    : body.serviceId ? [body.serviceId] : [];
+  if (!ids.length) {
+    return NextResponse.json({ error: "Please choose at least one service" }, { status: 400 });
+  }
   const pkg = await prisma.package.create({
     data: {
       name: body.name,
-      serviceId: body.serviceId,
+      serviceId: ids[0],
+      services: { connect: ids.map((id) => ({ id })) },
       sessionCount: body.sessionCount,
       price: body.price,
       validityDays: body.validityDays ?? 365,
     },
-    include: { service: { select: { name: true } } },
+    include: { service: { select: { name: true } }, services: { select: { id: true, name: true } } },
   });
   return NextResponse.json(pkg);
 }

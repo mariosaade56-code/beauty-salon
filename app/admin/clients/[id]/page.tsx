@@ -8,10 +8,10 @@ import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { ChevronLeft, Package, Camera, Trash2, Plus, X, Download } from "lucide-react";
 
-interface Package { id: string; name: string; sessionCount: number; price: number; service: { name: string }; }
+interface Package { id: string; name: string; sessionCount: number; price: number; service: { name: string }; services?: { id: string; name: string }[]; }
 interface ClientPackage {
   id: string; sessionsTotal: number; sessionsUsed: number; purchasedAt: string; expiresAt: string | null; notes: string | null;
-  package: { name: string; service: { name: string; category: string }; };
+  package: { name: string; service: { name: string; category: string }; services?: { id: string; name: string }[]; };
   appointments: { id: string; startTime: string; status: string }[];
 }
 interface Photo { id: string; url: string; type: string; notes: string | null; takenAt: string; }
@@ -498,7 +498,12 @@ export default function ClientDetailPage() {
                     <div className="flex items-start justify-between mb-3">
                       <div>
                         <p className="font-semibold text-gray-900">{cp.package.name}</p>
-                        <p className="text-sm text-gray-500">{cp.package.service.name}</p>
+                        <p className="text-sm text-gray-500">
+                          {(cp.package.services?.length
+                            ? cp.package.services.map((s) => s.name)
+                            : [cp.package.service.name]
+                          ).join(" · ")}
+                        </p>
                       </div>
                       <Badge variant={remaining > 0 ? "success" : "outline"}>
                         {remaining} / {cp.sessionsTotal} left
