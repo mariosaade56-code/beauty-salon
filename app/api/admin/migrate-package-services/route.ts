@@ -4,8 +4,7 @@ import { requireAdmin } from "@/lib/auth";
 
 // One-off: create the Package↔Service join table and backfill every existing
 // package's current service into it. Safe to run more than once.
-export async function POST() {
-  await requireAdmin();
+async function migrate() {
 
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "_PackageServices" (
@@ -45,4 +44,15 @@ export async function POST() {
 
   const total = await prisma.package.count();
   return NextResponse.json({ ok: true, packages: total, backfilled });
+}
+
+// GET as well as POST so it can be run by opening the URL while logged in
+export async function GET() {
+  await requireAdmin();
+  return migrate();
+}
+
+export async function POST() {
+  await requireAdmin();
+  return migrate();
 }
