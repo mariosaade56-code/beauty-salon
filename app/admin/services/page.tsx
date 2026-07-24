@@ -29,7 +29,8 @@ export default function ServicesPage() {
   const [editId, setEditId] = useState<string | null>(null);
 
   async function load() {
-    const data = await fetch("/api/services").then((r) => r.json());
+    // ?all=1 so hidden services stay listed and can be switched back on
+    const data = await fetch("/api/services?all=1").then((r) => r.json());
     setServices(Array.isArray(data) ? data : []);
   }
 
@@ -56,7 +57,11 @@ export default function ServicesPage() {
     load();
   }
 
-  const grouped = CATEGORIES.map((cat) => ({ cat, items: services.filter((s) => s.category === cat) })).filter((g) => g.items.length > 0);
+  // Group by the known categories, then sweep up anything with an old or
+  // unknown category so no service can end up invisible here
+  const known = CATEGORIES.map((cat) => ({ cat, items: services.filter((s) => s.category === cat) }));
+  const leftovers = services.filter((s) => !CATEGORIES.includes(s.category));
+  const grouped = [...known, { cat: "uncategorised", items: leftovers }].filter((g) => g.items.length > 0);
 
   return (
     <div className="p-4 md:p-6 space-y-4 md:space-y-6">
@@ -116,16 +121,19 @@ export default function ServicesPage() {
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">{cat}</h2>
           <div className="space-y-2">
             {items.map((s) => (
-              <div key={s.id} className="flex items-start justify-between bg-white border border-gray-200 rounded-xl px-4 py-3 gap-2">
-                <div>
+              <div key={s.id}
+                className={`flex items-start justify-between border rounded-xl px-4 py-3 gap-2 ${s.isActive ? "bg-white border-gray-200" : "bg-gray-50 border-gray-200"}`}>
+                <div className={s.isActive ? "" : "opacity-60"}>
                   <p className="font-medium text-gray-900">{s.name}</p>
                   {s.description && <p className="text-sm text-gray-500">{s.description}</p>}
                   <p className="text-xs text-gray-400 mt-0.5">{s.duration} min{s.price ? ` · $${s.price}` : ""}</p>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <Badge variant={s.isActive ? "success" : "outline"}>{s.isActive ? "Active" : "Off"}</Badge>
+                  <Badge variant={s.isActive ? "success" : "outline"}>{s.isActive ? "Active" : "Hidden"}</Badge>
                   <Button size="sm" variant="ghost" onClick={() => startEdit(s)}><Pencil className="w-4 h-4" /></Button>
-                  <Button size="sm" variant="ghost" onClick={() => toggleActive(s)}>{s.isActive ? "Hide" : "Show"}</Button>
+                  <Button size="sm" variant={s.isActive ? "ghost" : "outline"} onClick={() => toggleActive(s)}>
+                    {s.isActive ? "Hide" : "Show"}
+                  </Button>
                 </div>
               </div>
             ))}
