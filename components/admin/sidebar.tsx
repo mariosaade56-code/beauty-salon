@@ -5,7 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, Calendar, Users, Scissors, BarChart3,
-  Settings, LogOut, Sparkles, UserCircle, CalendarOff, Package, Globe, KeyRound, Wallet
+  Settings, LogOut, Sparkles, UserCircle, CalendarOff, Package, Globe, KeyRound, Wallet,
+  MoreHorizontal, X
 } from "lucide-react";
 
 const adminNavItems = [
@@ -33,6 +34,7 @@ export default function AdminSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [role, setRole] = useState<string>("ADMIN");
+  const [moreOpen, setMoreOpen] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth/me").then((r) => r.json()).then((u) => {
@@ -41,6 +43,12 @@ export default function AdminSidebar() {
   }, []);
 
   const navItems = role === "STAFF" ? staffNavItems : adminNavItems;
+  // Phone: first five sit in the bottom bar, the rest live behind "More"
+  const barItems = navItems.slice(0, 5);
+  const moreItems = navItems.slice(5);
+
+  // Close the sheet after navigating
+  useEffect(() => { setMoreOpen(false); }, [pathname]);
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -93,9 +101,42 @@ export default function AdminSidebar() {
         </button>
       </div>
 
+      {/* Mobile "More" sheet — everything that doesn't fit in the bottom bar */}
+      {moreOpen && (
+        <div className="md:hidden fixed inset-0 z-50" onClick={() => setMoreOpen(false)}>
+          <div className="absolute inset-0 bg-black/40" />
+          <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl pb-20 shadow-xl"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 pt-4 pb-2">
+              <span className="font-semibold text-gray-900">More</span>
+              <button onClick={() => setMoreOpen(false)} className="text-gray-400 p-1">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-3 pb-2">
+              {moreItems.map(({ href, label, icon: Icon }) => (
+                <Link key={href} href={href}
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium",
+                    pathname === href ? "bg-pink-50 text-pink-700" : "text-gray-700 active:bg-gray-100"
+                  )}>
+                  <Icon className="w-5 h-5 flex-shrink-0" />
+                  {label}
+                </Link>
+              ))}
+              <button onClick={logout}
+                className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium text-gray-700 active:bg-gray-100">
+                <LogOut className="w-5 h-5" />
+                Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Mobile bottom nav */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 flex">
-        {navItems.slice(0, 5).map(({ href, label, icon: Icon }) => (
+        {barItems.map(({ href, label, icon: Icon }) => (
           <Link key={href} href={href}
             className={cn(
               "flex-1 flex flex-col items-center justify-center py-2 text-xs gap-1",
@@ -105,13 +146,13 @@ export default function AdminSidebar() {
             <span className="truncate w-full text-center px-0.5">{label.split(" ")[0]}</span>
           </Link>
         ))}
-        {role !== "STAFF" && (
-          <Link href="/admin/settings"
+        {moreItems.length > 0 && (
+          <button onClick={() => setMoreOpen(true)}
             className={cn("flex-1 flex flex-col items-center justify-center py-2 text-xs gap-1",
-              pathname === "/admin/settings" ? "text-pink-600" : "text-gray-400")}>
-            <Settings className="w-5 h-5" />
+              moreItems.some((i) => i.href === pathname) ? "text-pink-600" : "text-gray-400")}>
+            <MoreHorizontal className="w-5 h-5" />
             <span>More</span>
-          </Link>
+          </button>
         )}
       </nav>
     </>
