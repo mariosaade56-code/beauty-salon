@@ -32,11 +32,13 @@ export default function PackagesPage() {
   const [editId, setEditId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
 
+  // Loaded independently so a failure on one side can't blank out the other
   async function load() {
-    const [pkgs, svcs] = await Promise.all([
-      fetch("/api/packages").then((r) => r.json()),
-      fetch("/api/services").then((r) => r.json()),
-    ]);
+    const get = (url: string) =>
+      fetch(url)
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null);
+    const [pkgs, svcs] = await Promise.all([get("/api/packages"), get("/api/services")]);
     setPackages(Array.isArray(pkgs) ? pkgs : []);
     setServices(Array.isArray(svcs) ? svcs : []);
   }
