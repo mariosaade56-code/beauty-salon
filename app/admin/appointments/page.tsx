@@ -539,7 +539,7 @@ export default function AppointmentsPage() {
       {/* Appointment detail */}
       {detail && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setDetail(null)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4 max-h-[calc(100dvh-2rem)] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between">
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">{detail.client.name}</h2>
@@ -662,7 +662,7 @@ export default function AppointmentsPage() {
       {/* Payment prompt on completion */}
       {payFor && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4 max-h-[calc(100dvh-2rem)] overflow-y-auto">
             <div>
               <h2 className="text-lg font-semibold text-gray-900">
                 {payIntent === "record" ? "Record Payment" : "Complete Appointment"}
