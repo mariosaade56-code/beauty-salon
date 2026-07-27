@@ -236,6 +236,26 @@ model DayOff {
   createdAt DateTime @default(now())
 }
 
+// ─── Products (retail stock) ──────────────────────────────────────────────────
+
+model Product {
+  id         String   @id @default(cuid())
+  name       String
+  brand      String?
+  category   String?
+  // What the salon pays vs what the client pays
+  cost       Float    @default(0)
+  price      Float    @default(0)
+  // Optional % off the selling price
+  discount   Float?
+  stock      Int      @default(0)
+  lowStockAt Int      @default(3)
+  notes      String?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
 // ─── Expenses ─────────────────────────────────────────────────────────────────
 
 model Expense {

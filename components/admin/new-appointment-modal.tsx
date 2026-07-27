@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { format } from "date-fns";
+import { applyDiscount, discountPercent } from "@/lib/pricing";
 import { X, UserCheck } from "lucide-react";
 
 interface Props {
@@ -34,6 +35,7 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
   const [pkgPayMode, setPkgPayMode] = useState<"PAID" | "PARTIAL" | "UNPAID">("PAID");
   const [pkgPayAmount, setPkgPayAmount] = useState("");
   const [staff, setStaff] = useState<{ id: string; name: string }[]>([]);
+  const [discount, setDiscount] = useState(0);
   const [slots, setSlots] = useState<{ time: string; staffId: string; staffName: string }[]>([]);
   const [slotsError, setSlotsError] = useState(false);
   const [form, setForm] = useState({
@@ -91,7 +93,8 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
   const effectiveServiceId = bookingServiceIds[0] || "";
   const chosen = services.filter((s) => selectedServices.includes(s.id));
   const totalDuration = chosen.reduce((sum, s) => sum + s.duration, 0);
-  const totalPrice = chosen.reduce((sum, s) => sum + (s.price || 0), 0);
+  const fullPrice = chosen.reduce((sum, s) => sum + (s.price || 0), 0);
+  const totalPrice = applyDiscount(fullPrice, discount);
 
   function toggleService(id: string) {
     setSelectedServices((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -103,6 +106,7 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
     fetch("/api/services").then((r) => r.json()).then(setServices);
     fetch("/api/packages").then((r) => r.json()).then((d) => setPackages(Array.isArray(d) ? d.filter((p) => p.isActive) : []));
     fetch("/api/staff").then((r) => r.json()).then(setStaff);
+    fetch("/api/settings").then((r) => r.json()).then((s) => setDiscount(discountPercent(s))).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -324,8 +328,12 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
                   <div className="mt-1.5 flex items-center justify-between text-xs bg-sand/40 border border-gray-200 rounded-lg px-3 py-2">
                     <span className="text-gray-700 truncate mr-2">
                       {chosen.length} service{chosen.length > 1 ? "s" : ""} · {totalDuration} min
+                      {discount > 0 && <span className="text-pink-700 font-medium"> · {discount}% off</span>}
                     </span>
-                    <span className="font-semibold text-gray-900 flex-shrink-0">${totalPrice}</span>
+                    <span className="font-semibold text-gray-900 flex-shrink-0">
+                      {discount > 0 && <span className="line-through text-gray-400 font-normal mr-1">${fullPrice}</span>}
+                      ${totalPrice}
+                    </span>
                   </div>
                 )}
               </>

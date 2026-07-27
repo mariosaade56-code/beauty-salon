@@ -9,6 +9,7 @@ import {
 } from "date-fns";
 import { ChevronLeft, ChevronRight, Plus, Phone, X, Trash2 } from "lucide-react";
 import NewAppointmentModal from "@/components/admin/new-appointment-modal";
+import { applyDiscount, discountPercent } from "@/lib/pricing";
 
 interface Appointment {
   id: string;
@@ -71,6 +72,9 @@ export default function AppointmentsPage() {
   const [payFor, setPayFor] = useState<Appointment | null>(null);
   const [payMode, setPayMode] = useState<"PAID" | "PARTIAL" | "UNPAID">("PAID");
   const [payAmount, setPayAmount] = useState("");
+  const [discount, setDiscount] = useState(0);
+  // What the client actually owes, after any salon-wide offer
+  const payPrice = (a: Appointment) => applyDiscount(a.service.price || 0, discount);
   const [now, setNow] = useState(new Date());
   const [role, setRole] = useState("STAFF");
   const isAdmin = role === "ADMIN";
@@ -130,6 +134,7 @@ export default function AppointmentsPage() {
     loadStaff();
     fetch("/api/auth/me").then((r) => r.json()).then((u) => { if (u?.role) setRole(u.role); }).catch(() => {});
     fetch("/api/daysoff").then((r) => (r.ok ? r.json() : [])).then((d) => setDaysOff(Array.isArray(d) ? d : [])).catch(() => {});
+    fetch("/api/settings").then((r) => r.json()).then((s) => setDiscount(discountPercent(s))).catch(() => {});
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -168,7 +173,7 @@ export default function AppointmentsPage() {
 
   async function confirmPayment() {
     if (!payFor) return;
-    const price = payFor.service.price || 0;
+    const price = payPrice(payFor);
     const amountPaid = payMode === "PAID" ? price : payMode === "PARTIAL" ? parseFloat(payAmount || "0") : 0;
     const body: Record<string, unknown> = { paymentStatus: payMode, amountPaid };
     if (payIntent === "complete") body.status = "COMPLETED";
@@ -577,11 +582,11 @@ export default function AppointmentsPage() {
                 <div className="text-sm">
                   <span className="text-gray-500">Payment: </span>
                   {detail.paymentStatus === "PAID" ? (
-                    <span className="font-semibold text-green-700">Paid ${detail.amountPaid ?? detail.service.price}</span>
+                    <span className="font-semibold text-green-700">Paid ${detail.amountPaid ?? payPrice(detail)}</span>
                   ) : detail.paymentStatus === "PARTIAL" ? (
-                    <span className="font-semibold text-amber-700">Partial ${detail.amountPaid ?? 0} of ${detail.service.price} · owes ${(detail.service.price - (detail.amountPaid ?? 0)).toFixed(0)}</span>
+                    <span className="font-semibold text-amber-700">Partial ${detail.amountPaid ?? 0} of ${payPrice(detail)} · owes ${(payPrice(detail) - (detail.amountPaid ?? 0)).toFixed(0)}</span>
                   ) : detail.paymentStatus === "UNPAID" ? (
-                    <span className="font-semibold text-red-600">Not paid · owes ${detail.service.price}</span>
+                    <span className="font-semibold text-red-600">Not paid · owes ${payPrice(detail)}</span>
                   ) : (
                     <span className="text-gray-400">not recorded</span>
                   )}
@@ -668,12 +673,15 @@ export default function AppointmentsPage() {
                 {payIntent === "record" ? "Record Payment" : "Complete Appointment"}
               </h2>
               <p className="text-sm text-gray-500 mt-1">
-                {payFor.client.name} · {payFor.service.name} · <span className="font-semibold text-gray-900">${payFor.service.price}</span>
+                {payFor.client.name} · {payFor.service.name} ·{" "}
+                {discount > 0 && <span className="line-through text-gray-400 mr-1">${payFor.service.price}</span>}
+                <span className="font-semibold text-gray-900">${payPrice(payFor)}</span>
+                {discount > 0 && <span className="text-pink-600 font-medium ml-1">({discount}% off)</span>}
               </p>
             </div>
             <div className="space-y-2">
               {([
-                { value: "PAID", label: `Paid in full ($${payFor.service.price})` },
+                { value: "PAID", label: `Paid in full ($${payPrice(payFor)})` },
                 { value: "PARTIAL", label: "Partially paid" },
                 { value: "UNPAID", label: "Not paid" },
               ] as const).map((opt) => (
@@ -686,10 +694,10 @@ export default function AppointmentsPage() {
               {payMode === "PARTIAL" && (
                 <div className="pl-1 pt-1">
                   <label className="block text-xs text-gray-500 mb-1">Amount paid ($)</label>
-                  <Input type="number" step="0.01" min={0} max={payFor.service.price || undefined}
+                  <Input type="number" step="0.01" min={0} max={payPrice(payFor) || undefined}
                     value={payAmount} onChange={(e) => setPayAmount(e.target.value)} placeholder="e.g. 20" autoFocus />
                   {payAmount && payFor.service.price && (
-                    <p className="text-xs text-amber-600 mt-1">Balance due: ${(payFor.service.price - parseFloat(payAmount || "0")).toFixed(2)}</p>
+                    <p className="text-xs text-amber-600 mt-1">Balance due: ${(payPrice(payFor) - parseFloat(payAmount || "0")).toFixed(2)}</p>
                   )}
                 </div>
               )}

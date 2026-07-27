@@ -17,6 +17,28 @@ interface ClientPackage {
 interface Photo { id: string; url: string; type: string; notes: string | null; takenAt: string; }
 interface Client { id: string; name: string; phone: string; email: string | null; notes: string | null; dob: string | null; address: string | null; createdAt: string; }
 interface Transaction { id: string; date: string; description: string; amount: number; paid: boolean; reference: string | null; }
+interface Visit {
+  id: string; startTime: string; status: string;
+  paymentStatus: string | null; amountPaid: number | null; notes: string | null;
+  clientPackageId: string | null;
+  service: { name: string; category: string; price: number | null };
+  staff: { name: string } | null;
+}
+
+// Groups the service categories into the buckets Sandy actually asks for
+const VISIT_FILTERS = [
+  { key: "all", label: "All" },
+  { key: "laser", label: "Laser" },
+  { key: "cellulite", label: "Cellulite" },
+  { key: "skincare", label: "Skincare" },
+  { key: "other", label: "Other" },
+] as const;
+
+const KNOWN_BUCKETS = ["laser", "cellulite", "skincare"];
+function visitBucket(v: Visit): string {
+  const cat = (v.service.category || "").toLowerCase();
+  return KNOWN_BUCKETS.includes(cat) ? cat : "other";
+}
 
 
 export default function ClientDetailPage() {
@@ -27,7 +49,9 @@ export default function ClientDetailPage() {
   const [availablePackages, setAvailablePackages] = useState<Package[]>([]);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [tab, setTab] = useState<"record" | "packages" | "photos">("record");
+  const [tab, setTab] = useState<"record" | "visits" | "packages" | "photos">("record");
+  const [visits, setVisits] = useState<Visit[]>([]);
+  const [visitFilter, setVisitFilter] = useState<string>("all");
   const [profile, setProfile] = useState({ name: "", phone: "", email: "", dob: "", address: "", notes: "" });
   const [profileSaved, setProfileSaved] = useState(false);
   const [txForm, setTxForm] = useState({ date: new Date().toISOString().slice(0, 10), description: "", amount: "", paid: true, reference: "" });
@@ -90,13 +114,15 @@ export default function ClientDetailPage() {
   }
 
   async function load() {
-    const [c, cp, pkgs, ph, txs] = await Promise.all([
+    const [c, cp, pkgs, ph, txs, vs] = await Promise.all([
       fetch(`/api/clients/${id}`).then((r) => r.json()),
       fetch(`/api/clients/${id}/packages`).then((r) => r.json()),
       fetch("/api/packages").then((r) => r.json()),
       fetch(`/api/clients/${id}/photos`).then((r) => r.json()),
       fetch(`/api/clients/${id}/transactions`).then((r) => r.json()),
+      fetch(`/api/clients/${id}/appointments`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
     ]);
+    setVisits(Array.isArray(vs) ? vs : []);
     setClient(c);
     setProfile({
       name: c.name || "",
@@ -111,6 +137,8 @@ export default function ClientDetailPage() {
     setPhotos(Array.isArray(ph) ? ph : []);
     setTransactions(Array.isArray(txs) ? txs : []);
   }
+
+  const filteredVisits = visitFilter === "all" ? visits : visits.filter((v) => visitBucket(v) === visitFilter);
 
   async function saveProfile(e: React.FormEvent) {
     e.preventDefault();
@@ -290,11 +318,11 @@ export default function ClientDetailPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
-        {(["record", "packages", "photos"] as const).map((t) => (
+        {(["record", "visits", "packages", "photos"] as const).map((t) => (
           <button key={t}
             onClick={() => setTab(t)}
             className={`px-4 py-2 text-sm font-medium capitalize border-b-2 transition-colors whitespace-nowrap ${tab === t ? "border-pink-600 text-pink-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
-            {t === "record" ? "📋 Record" : t === "packages" ? "📦 Packages" : "📸 Photos"}
+            {t === "record" ? "📋 Record" : t === "visits" ? `💉 Sessions (${visits.length})` : t === "packages" ? "📦 Packages" : "📸 Photos"}
           </button>
         ))}
       </div>
@@ -420,6 +448,83 @@ export default function ClientDetailPage() {
               )}
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {/* Sessions tab — every visit, filtered by service type */}
+      {tab === "visits" && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            {VISIT_FILTERS.map((f) => {
+              const count = f.key === "all" ? visits.length : visits.filter((v) => visitBucket(v) === f.key).length;
+              const on = visitFilter === f.key;
+              return (
+                <button key={f.key} onClick={() => setVisitFilter(f.key)}
+                  className={`px-3.5 py-1.5 rounded-full text-sm font-medium border transition-colors ${on ? "bg-pink-600 border-pink-600 text-white" : "bg-white border-gray-200 text-gray-600 hover:border-pink-300"}`}>
+                  {f.label} <span className={on ? "text-pink-100" : "text-gray-400"}>({count})</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* What this filter adds up to */}
+          {filteredVisits.length > 0 && (
+            <div className="grid grid-cols-3 gap-3">
+              <Card><CardContent className="p-4">
+                <p className="text-xs text-gray-500">Sessions</p>
+                <p className="text-xl font-bold text-gray-900">{filteredVisits.length}</p>
+              </CardContent></Card>
+              <Card><CardContent className="p-4">
+                <p className="text-xs text-gray-500">Completed</p>
+                <p className="text-xl font-bold text-green-600">{filteredVisits.filter((v) => v.status === "COMPLETED").length}</p>
+              </CardContent></Card>
+              <Card><CardContent className="p-4">
+                <p className="text-xs text-gray-500">Paid</p>
+                <p className="text-xl font-bold text-gray-900">
+                  ${filteredVisits.reduce((s, v) => s + (v.amountPaid || 0), 0).toFixed(2)}
+                </p>
+              </CardContent></Card>
+            </div>
+          )}
+
+          {filteredVisits.length === 0 ? (
+            <Card><CardContent className="py-10 text-center text-gray-400 text-sm">
+              {visits.length === 0 ? "No sessions yet" : "No sessions of this type"}
+            </CardContent></Card>
+          ) : (
+            <div className="space-y-2">
+              {filteredVisits.map((v) => (
+                <div key={v.id} className="bg-white border border-gray-200 rounded-xl px-4 py-3">
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div className="min-w-0">
+                      <p className="font-medium text-gray-900">{v.service.name}</p>
+                      <p className="text-sm text-gray-500">
+                        {format(new Date(v.startTime), "d MMMM, yyyy")} · {format(new Date(v.startTime), "h:mm a")}
+                        {v.staff ? ` · ${v.staff.name}` : ""}
+                      </p>
+                      {v.notes && <p className="text-xs text-gray-400 mt-0.5">{v.notes}</p>}
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {v.clientPackageId ? (
+                        <Badge variant="default">Package</Badge>
+                      ) : v.amountPaid != null ? (
+                        <Badge variant={v.paymentStatus === "PAID" ? "success" : "warning"}>
+                          ${v.amountPaid.toFixed(2)}
+                        </Badge>
+                      ) : null}
+                      <Badge variant={
+                        v.status === "COMPLETED" ? "success"
+                          : v.status === "NO_SHOW" || v.status === "CANCELLED" ? "destructive"
+                          : "outline"
+                      }>
+                        {v.status === "NO_SHOW" ? "No-show" : v.status.charAt(0) + v.status.slice(1).toLowerCase()}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

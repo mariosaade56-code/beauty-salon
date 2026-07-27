@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, Calendar, Users, Scissors, BarChart3,
   Settings, LogOut, Sparkles, UserCircle, CalendarOff, Package, Globe, KeyRound, Wallet,
-  MoreHorizontal, X
+  MoreHorizontal, X, ShoppingBag
 } from "lucide-react";
 
 const adminNavItems = [
@@ -16,6 +16,7 @@ const adminNavItems = [
   { href: "/admin/staff", label: "Staff", icon: UserCircle },
   { href: "/admin/services", label: "Services", icon: Scissors },
   { href: "/admin/packages", label: "Packages", icon: Package },
+  { href: "/admin/products", label: "Products", icon: ShoppingBag },
   { href: "/admin/calendar", label: "Calendar", icon: CalendarOff },
   { href: "/admin/reports", label: "Reports", icon: BarChart3 },
   { href: "/admin/accounting", label: "Accounting", icon: Wallet },

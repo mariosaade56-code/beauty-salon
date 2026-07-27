@@ -14,6 +14,7 @@ interface Settings {
   instagram_url?: string;
   tiktok_url?: string;
   google_reviews_url?: string;
+  service_discount_percent?: string;
 }
 
 function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
@@ -69,6 +70,39 @@ export default function SettingsPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
             <Input value={settings.salon_address || ""} onChange={(e) => set("salon_address", e.target.value)} placeholder="123 Main St" />
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Salon-wide discount on services */}
+      <Card>
+        <CardHeader><CardTitle>Discount on All Services</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Discount (%)</label>
+            <Input type="number" min={0} max={100} step={1}
+              value={settings.service_discount_percent || ""}
+              onChange={(e) => set("service_discount_percent", e.target.value)}
+              placeholder="Leave empty for no discount" />
+          </div>
+          {(() => {
+            const pct = parseFloat(settings.service_discount_percent || "");
+            if (!Number.isFinite(pct) || pct <= 0) {
+              return <p className="text-sm text-gray-500">No discount running — clients pay the normal price.</p>;
+            }
+            return (
+              <div className="bg-pink-50 border border-pink-200 rounded-lg px-4 py-3 text-sm">
+                <p className="font-medium text-pink-800">{pct}% off every service is running</p>
+                <p className="text-pink-700 mt-0.5">
+                  A $100 service now costs <span className="font-semibold">${(100 * (1 - pct / 100)).toFixed(2)}</span>.
+                  Discounted prices show on the booking page and are used when recording payment.
+                  Set it back to empty to end the offer.
+                </p>
+              </div>
+            );
+          })()}
+          <p className="text-xs text-gray-400">
+            Packages and products are priced separately — this only affects services.
+          </p>
         </CardContent>
       </Card>
 

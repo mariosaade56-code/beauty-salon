@@ -8,6 +8,7 @@ import { format, addDays } from "date-fns";
 import { CheckCircle, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
 import Link from "next/link";
 import Butterfly from "@/components/butterfly";
+import { applyDiscount, discountPercent } from "@/lib/pricing";
 
 interface Service { id: string; name: string; category: string; duration: number; price: number | null; description: string | null; }
 interface Staff { id: string; name: string; color: string; }
@@ -22,6 +23,7 @@ function BookingForm() {
   const [staff, setStaff] = useState<Staff[]>([]);
   const [slots, setSlots] = useState<Slot[]>([]);
   const [staffSelectionEnabled, setStaffSelectionEnabled] = useState(false);
+  const [discount, setDiscount] = useState(0);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [form, setForm] = useState({
     staffId: "", time: "", slotStaffId: "",
@@ -66,6 +68,7 @@ function BookingForm() {
     fetch("/api/settings").then((r) => r.json()).then((s) => {
       // Hidden unless the admin explicitly turns it on
       setStaffSelectionEnabled(s.staff_selection_enabled === "true");
+      setDiscount(discountPercent(s));
     });
   }, []);
 
@@ -140,7 +143,9 @@ function BookingForm() {
   }
 
   const selectedServices = services.filter((s) => selected.includes(s.id));
-  const totalPrice = activePkg ? activePkg.price : selectedServices.reduce((sum, s) => sum + (s.price || 0), 0);
+  // Packages keep their own price; the salon-wide offer applies to services
+  const fullPrice = activePkg ? activePkg.price : selectedServices.reduce((sum, s) => sum + (s.price || 0), 0);
+  const totalPrice = activePkg ? fullPrice : applyDiscount(fullPrice, discount);
   const totalDuration = activePkg
     ? pkgSessionService?.duration ?? activePkg.service.duration
     : selectedServices.reduce((sum, s) => sum + s.duration, 0);
@@ -164,6 +169,12 @@ function BookingForm() {
       {step === 1 && (
         <div className="space-y-6">
           <div>
+            {discount > 0 && (
+              <div className="mb-3 rounded-xl border-2 border-charcoal bg-sand/40 px-4 py-3 text-center">
+                <p className="font-heading text-lg font-medium text-charcoal">{discount}% off all services</p>
+                <p className="text-xs text-charcoal/50 mt-0.5">Discount already applied to the prices below</p>
+              </div>
+            )}
             <label className="block text-sm font-medium text-charcoal/70 mb-2">Services * <span className="font-normal text-charcoal/40">(you can pick more than one)</span></label>
             <div className="space-y-3">
               {packages.length > 0 && (
@@ -248,7 +259,15 @@ function BookingForm() {
                               onClick={() => toggleService(s.id)}
                               className={`p-3 rounded-lg border-2 text-left transition-all ${isSelected ? "border-charcoal bg-sand/40" : "border-sand bg-cream hover:border-taupe"} ${group.items.length === 1 ? "col-span-2" : ""}`}>
                               <p className="font-medium text-charcoal text-sm">{isSelected ? "✓ " : ""}{cleanName(s.name)}</p>
-                              <p className="text-xs text-charcoal/50">{s.duration} min{s.price ? ` · $${s.price}` : ""}</p>
+                              <p className="text-xs text-charcoal/50">
+                                {s.duration} min
+                                {s.price ? (
+                                  discount > 0 ? (
+                                    <> · <span className="line-through opacity-50">${s.price}</span>{" "}
+                                      <span className="font-semibold text-charcoal">${applyDiscount(s.price, discount)}</span></>
+                                  ) : ` · $${s.price}`
+                                ) : ""}
+                              </p>
                               {s.description && <p className="text-xs text-charcoal/40 mt-1">{s.description}</p>}
                             </button>
                           );
@@ -339,11 +358,24 @@ function BookingForm() {
               selectedServices.map((s) => (
                 <div key={s.id} className="flex items-center justify-between">
                   <p className="font-heading text-lg font-medium text-charcoal">{cleanName(s.name)}</p>
-                  {s.price && <p className="text-sm text-charcoal/60">${s.price}</p>}
+                  {s.price && (
+                    <p className="text-sm text-charcoal/60">
+                      {discount > 0 && <span className="line-through opacity-50 mr-1">${s.price}</span>}
+                      ${applyDiscount(s.price, discount)}
+                    </p>
+                  )}
                 </div>
               ))
             )}
-            <p className="text-sm text-taupe mt-1.5">{format(selectedDate, "EEEE, MMMM d")} at {form.time} · {totalDuration} min{totalPrice ? ` · $${totalPrice} total` : ""}</p>
+            <p className="text-sm text-taupe mt-1.5">
+              {format(selectedDate, "EEEE, MMMM d")} at {form.time} · {totalDuration} min
+              {totalPrice ? ` · $${totalPrice} total` : ""}
+            </p>
+            {!activePkg && discount > 0 && totalPrice > 0 && (
+              <p className="text-sm text-charcoal font-medium mt-0.5">
+                {discount}% off applied — you save ${(fullPrice - totalPrice).toFixed(2)}
+              </p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-charcoal/70 mb-1">Full Name *</label>
