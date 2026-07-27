@@ -21,6 +21,12 @@ interface Appointment {
   service: { price: number | null };
 }
 
+interface ProductSale {
+  quantity: number;
+  total: number;
+  paid: boolean;
+}
+
 const CATEGORY_SUGGESTIONS = [
   "Rent", "Supplies", "Salaries", "Electricity (EDL)", "Generator",
   "Water", "Internet", "Marketing", "Maintenance", "Other",
@@ -31,25 +37,33 @@ export default function AccountingPage() {
   const [from, setFrom] = useState(format(startOfMonth(now), "yyyy-MM-dd"));
   const [to, setTo] = useState(format(endOfMonth(now), "yyyy-MM-dd"));
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [revenue, setRevenue] = useState(0);
+  const [serviceRevenue, setServiceRevenue] = useState(0);
+  const [productRevenue, setProductRevenue] = useState(0);
+  const [productCount, setProductCount] = useState(0);
+  const revenue = serviceRevenue + productRevenue;
   const [form, setForm] = useState({ date: format(now, "yyyy-MM-dd"), category: "", description: "", amount: "" });
   const [formError, setFormError] = useState("");
 
   const load = useCallback(async () => {
     if (!from || !to) return;
     const [a, b] = from <= to ? [from, to] : [to, from];
-    const [exp, appts] = await Promise.all([
+    const [exp, appts, sales] = await Promise.all([
       fetch(`/api/expenses?from=${a}&to=${b}`).then((r) => (r.ok ? r.json() : [])),
       fetch(`/api/appointments?from=${a}&to=${b}`).then((r) => (r.ok ? r.json() : [])),
+      fetch(`/api/product-sales?from=${a}&to=${b}`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
     ]);
     setExpenses(Array.isArray(exp) ? exp : []);
     const completed = (Array.isArray(appts) ? appts : []).filter((x: Appointment) => x.status === "COMPLETED");
-    setRevenue(
+    setServiceRevenue(
       completed.reduce(
         (sum: number, x: Appointment) => sum + (x.paymentStatus ? (x.amountPaid ?? 0) : (x.service.price || 0)),
         0
       )
     );
+    // Only money actually collected counts, same rule as services
+    const paidSales = (Array.isArray(sales) ? sales : []).filter((s: ProductSale) => s.paid);
+    setProductRevenue(paidSales.reduce((sum: number, s: ProductSale) => sum + s.total, 0));
+    setProductCount(paidSales.reduce((sum: number, s: ProductSale) => sum + s.quantity, 0));
   }, [from, to]);
 
   useEffect(() => { load(); }, [load]);
@@ -124,6 +138,11 @@ export default function AccountingPage() {
               <div>
                 <p className="text-sm text-gray-500">Revenue (collected)</p>
                 <p className="text-2xl font-bold text-gray-900 mt-1">${revenue.toFixed(0)}</p>
+                {productRevenue > 0 && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    Services ${serviceRevenue.toFixed(0)} · Products ${productRevenue.toFixed(0)} ({productCount} sold)
+                  </p>
+                )}
               </div>
               <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-green-50 text-green-600">
                 <TrendingUp className="w-6 h-6" />

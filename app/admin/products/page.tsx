@@ -1,17 +1,25 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Plus, X, Pencil, Trash2, ShoppingBag, Minus } from "lucide-react";
+import { Plus, X, Pencil, Trash2, ShoppingBag, Minus, DollarSign } from "lucide-react";
 import { productPrice } from "@/lib/pricing";
+import { format } from "date-fns";
 
 interface Product {
   id: string; name: string; brand: string | null; category: string | null;
   cost: number; price: number; discount: number | null;
   stock: number; lowStockAt: number; notes: string | null; isActive: boolean;
 }
+interface Sale {
+  id: string; quantity: number; unitPrice: number; total: number; paid: boolean;
+  soldAt: string; notes: string | null;
+  product: { name: string; brand: string | null };
+  client: { id: string; name: string } | null;
+}
+interface ClientHit { id: string; name: string; phone: string; }
 
 const blank = {
   name: "", brand: "", category: "", cost: "", price: "",
@@ -24,13 +32,85 @@ export default function ProductsPage() {
   const [form, setForm] = useState(blank);
   const [editId, setEditId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [role, setRole] = useState("STAFF");
+  const isAdmin = role === "ADMIN";
+
+  // Selling
+  const [sellFor, setSellFor] = useState<Product | null>(null);
+  const [sellQty, setSellQty] = useState("1");
+  const [sellPrice, setSellPrice] = useState("");
+  const [sellPaid, setSellPaid] = useState(true);
+  const [sellClient, setSellClient] = useState<ClientHit | null>(null);
+  const [clientQuery, setClientQuery] = useState("");
+  const [clientHits, setClientHits] = useState<ClientHit[]>([]);
+  const [selling, setSelling] = useState(false);
+  const [sales, setSales] = useState<Sale[]>([]);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   async function load() {
-    const d = await fetch("/api/products").then((r) => (r.ok ? r.json() : null)).catch(() => null);
-    setProducts(Array.isArray(d) ? d : []);
+    const [p, s] = await Promise.all([
+      fetch("/api/products").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      fetch("/api/product-sales").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    ]);
+    setProducts(Array.isArray(p) ? p : []);
+    setSales(Array.isArray(s) ? s : []);
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    fetch("/api/auth/me").then((r) => r.json()).then((u) => { if (u?.role) setRole(u.role); }).catch(() => {});
+  }, []);
+
+  function startSell(p: Product) {
+    setSellFor(p);
+    setSellQty("1");
+    setSellPrice(String(productPrice(p)));
+    setSellPaid(true);
+    setSellClient(null);
+    setClientQuery("");
+    setClientHits([]);
+  }
+
+  function searchClients(q: string) {
+    setClientQuery(q);
+    setSellClient(null);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (q.trim().length < 2) { setClientHits([]); return; }
+    searchTimer.current = setTimeout(async () => {
+      const d = await fetch(`/api/clients?search=${encodeURIComponent(q.trim())}`)
+        .then((r) => (r.ok ? r.json() : [])).catch(() => []);
+      setClientHits(Array.isArray(d) ? d.slice(0, 5) : []);
+    }, 250);
+  }
+
+  async function confirmSale() {
+    if (!sellFor) return;
+    setSelling(true);
+    const res = await fetch("/api/product-sales", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        productId: sellFor.id,
+        quantity: Number(sellQty) || 1,
+        unitPrice: sellPrice,
+        paid: sellPaid,
+        clientId: sellClient?.id || null,
+      }),
+    }).catch(() => null);
+    setSelling(false);
+    if (!res || !res.ok) {
+      const d = res ? await res.json().catch(() => ({})) : {};
+      return alert(d.error || "Could not record the sale — please try again.");
+    }
+    setSellFor(null);
+    load();
+  }
+
+  async function undoSale(s: Sale) {
+    if (!confirm(`Undo the sale of ${s.product.name}? The stock goes back and the charge is removed.`)) return;
+    await fetch(`/api/product-sales/${s.id}`, { method: "DELETE" });
+    load();
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -236,15 +316,18 @@ export default function ProductsPage() {
                   </div>
 
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    {/* Stock counter */}
+                    <Button size="sm" onClick={() => startSell(p)} disabled={p.stock < 1}>
+                      <DollarSign className="w-4 h-4 mr-0.5" /> Sell
+                    </Button>
+                    {/* Stock counter — for corrections and deliveries, not sales */}
                     <div className="flex items-center gap-1 border border-gray-200 rounded-lg">
-                      <button onClick={() => changeStock(p, -1)} className="px-2 py-1.5 text-gray-500 hover:bg-gray-50 rounded-l-lg" title="Sold one">
+                      <button onClick={() => changeStock(p, -1)} className="px-2 py-1.5 text-gray-500 hover:bg-gray-50 rounded-l-lg" title="Correct the count down">
                         <Minus className="w-4 h-4" />
                       </button>
                       <span className={`px-2 text-sm font-semibold tabular-nums ${low ? "text-amber-600" : "text-gray-900"}`}>
                         {p.stock}
                       </span>
-                      <button onClick={() => changeStock(p, 1)} className="px-2 py-1.5 text-gray-500 hover:bg-gray-50 rounded-r-lg" title="Received one">
+                      <button onClick={() => changeStock(p, 1)} className="px-2 py-1.5 text-gray-500 hover:bg-gray-50 rounded-r-lg" title="New stock arrived">
                         <Plus className="w-4 h-4" />
                       </button>
                     </div>
@@ -258,6 +341,139 @@ export default function ProductsPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Recent sales */}
+      {sales.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle>Recent Sales</CardTitle></CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {sales.map((s) => (
+                <div key={s.id} className="flex items-center justify-between gap-3 border border-gray-100 rounded-lg px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-900">
+                      {s.product.name}{s.quantity > 1 ? ` × ${s.quantity}` : ""}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {format(new Date(s.soldAt), "d MMMM, yyyy")}
+                      {s.client ? ` · ${s.client.name}` : " · walk-in"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <Badge variant={s.paid ? "success" : "warning"}>
+                      {s.paid ? `$${s.total.toFixed(2)}` : `$${s.total.toFixed(2)} unpaid`}
+                    </Badge>
+                    {isAdmin && (
+                      <button onClick={() => undoSale(s)} className="text-gray-300 hover:text-red-500" title="Undo this sale">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Record a sale */}
+      {sellFor && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4 max-h-[calc(100dvh-2rem)] overflow-y-auto">
+            <div className="flex items-start justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Sell {sellFor.name}</h2>
+                <p className="text-sm text-gray-500 mt-0.5">{sellFor.stock} in stock</p>
+              </div>
+              <button onClick={() => setSellFor(null)}><X className="w-5 h-5 text-gray-400" /></button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                <Input type="number" min={1} max={sellFor.stock} value={sellQty}
+                  onChange={(e) => setSellQty(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Price each ($)</label>
+                <Input type="number" step="0.01" min={0} value={sellPrice}
+                  onChange={(e) => setSellPrice(e.target.value)} />
+              </div>
+            </div>
+
+            <div className="relative">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Client <span className="font-normal text-gray-400">(leave empty for a walk-in)</span>
+              </label>
+              <Input value={sellClient ? sellClient.name : clientQuery} autoComplete="off"
+                placeholder="Type a name or phone…"
+                onChange={(e) => searchClients(e.target.value)} />
+              {sellClient && (
+                <p className="text-xs text-green-600 mt-1">
+                  ✓ Will be added to {sellClient.name}&apos;s file
+                </p>
+              )}
+              {!sellClient && clientHits.length > 0 && (
+                <div className="absolute z-10 left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+                  {clientHits.map((c) => (
+                    <button key={c.id} type="button"
+                      className="w-full text-left px-3 py-2 hover:bg-pink-50"
+                      onClick={() => { setSellClient(c); setClientHits([]); }}>
+                      <p className="text-sm font-medium text-gray-900">{c.name}</p>
+                      <p className="text-xs text-gray-500">{c.phone}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              {([
+                { value: true, label: "Paid now" },
+                { value: false, label: "Not paid yet" },
+              ] as const).map((opt) => (
+                <label key={String(opt.value)}
+                  className={`flex items-center gap-3 border rounded-xl px-4 py-2.5 cursor-pointer transition-colors ${sellPaid === opt.value ? "border-pink-600 bg-pink-50" : "border-gray-200 hover:border-gray-300"}`}>
+                  <input type="radio" name="sellpaid" checked={sellPaid === opt.value} onChange={() => setSellPaid(opt.value)} />
+                  <span className="text-sm font-medium text-gray-900">{opt.label}</span>
+                </label>
+              ))}
+            </div>
+
+            {/* What this sale comes to */}
+            <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm">
+              {(() => {
+                const qty = Math.max(Number(sellQty) || 1, 1);
+                const each = parseFloat(sellPrice) || 0;
+                const total = each * qty;
+                const profit = total - sellFor.cost * qty;
+                return (
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-600">Total</span>
+                    <span className="text-right">
+                      <span className="font-semibold text-gray-900 text-base">${total.toFixed(2)}</span>
+                      <span className={`block text-xs ${profit >= 0 ? "text-green-600" : "text-red-600"}`}>
+                        {profit >= 0 ? "+" : ""}${profit.toFixed(2)} profit
+                      </span>
+                    </span>
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setSellFor(null)}>Cancel</Button>
+              <Button className="flex-1" onClick={confirmSale}
+                disabled={selling || Number(sellQty) > sellFor.stock || Number(sellQty) < 1}>
+                {selling ? "Saving…" : "Record Sale"}
+              </Button>
+            </div>
+            {Number(sellQty) > sellFor.stock && (
+              <p className="text-xs text-red-500 text-center">Only {sellFor.stock} in stock</p>
+            )}
+          </div>
         </div>
       )}
     </div>

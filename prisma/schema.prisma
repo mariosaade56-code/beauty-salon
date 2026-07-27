@@ -92,6 +92,7 @@ model Client {
   photos          ClientPhoto[]
   transactions    ClientTransaction[]
   pendingWork     PendingWork[]
+  productSales    ProductSale[]
   createdAt       DateTime            @default(now())
 }
 
@@ -252,8 +253,29 @@ model Product {
   lowStockAt Int      @default(3)
   notes      String?
   isActive   Boolean  @default(true)
+  sales      ProductSale[]
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+}
+
+// One sale of a product. Kept separate from ClientTransaction so walk-in
+// sales with no client on file are still counted.
+model ProductSale {
+  id            String   @id @default(cuid())
+  productId     String
+  product       Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  clientId      String?
+  client        Client?  @relation(fields: [clientId], references: [id])
+  quantity      Int      @default(1)
+  // Captured at the time of sale so later price changes don't rewrite history
+  unitPrice     Float
+  unitCost      Float    @default(0)
+  total         Float
+  paid          Boolean  @default(true)
+  notes         String?
+  // The row mirrored into the client's file, so deleting the sale clears it
+  transactionId String?
+  soldAt        DateTime @default(now())
 }
 
 // ─── Expenses ─────────────────────────────────────────────────────────────────
