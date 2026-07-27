@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
+import { beirutDayRange } from "@/lib/timezone";
 
 export async function GET(req: NextRequest) {
   await requireAuth();
@@ -8,9 +9,10 @@ export async function GET(req: NextRequest) {
   const from = searchParams.get("from");
   const to = searchParams.get("to");
 
+  // Salon-local days, same as expenses — the server runs on UTC
   const where =
     from && to
-      ? { soldAt: { gte: new Date(`${from}T00:00:00`), lte: new Date(`${to}T23:59:59.999`) } }
+      ? { soldAt: { gte: beirutDayRange(from).gte, lt: beirutDayRange(to).lt } }
       : {};
 
   const sales = await prisma.productSale.findMany({

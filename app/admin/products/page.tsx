@@ -1,12 +1,12 @@
 "use client";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Plus, X, Pencil, Trash2, ShoppingBag, Minus, DollarSign } from "lucide-react";
 import { productPrice } from "@/lib/pricing";
-import { format } from "date-fns";
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns";
 
 interface Product {
   id: string; name: string; brand: string | null; category: string | null;
@@ -14,8 +14,8 @@ interface Product {
   stock: number; lowStockAt: number; notes: string | null; isActive: boolean;
 }
 interface Sale {
-  id: string; quantity: number; unitPrice: number; total: number; paid: boolean;
-  soldAt: string; notes: string | null;
+  id: string; quantity: number; unitPrice: number; unitCost: number;
+  total: number; paid: boolean; soldAt: string; notes: string | null;
   product: { name: string; brand: string | null };
   client: { id: string; name: string } | null;
 }
@@ -27,6 +27,10 @@ const blank = {
 };
 
 export default function ProductsPage() {
+  const now = new Date();
+  const [section, setSection] = useState<"items" | "sales">("items");
+  const [from, setFrom] = useState(format(startOfMonth(now), "yyyy-MM-dd"));
+  const [to, setTo] = useState(format(endOfMonth(now), "yyyy-MM-dd"));
   const [products, setProducts] = useState<Product[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(blank);
@@ -47,19 +51,35 @@ export default function ProductsPage() {
   const [sales, setSales] = useState<Sale[]>([]);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  async function load() {
-    const [p, s] = await Promise.all([
-      fetch("/api/products").then((r) => (r.ok ? r.json() : null)).catch(() => null),
-      fetch("/api/product-sales").then((r) => (r.ok ? r.json() : null)).catch(() => null),
-    ]);
-    setProducts(Array.isArray(p) ? p : []);
+  // Sales are fetched for the chosen date range; items are not date-bound
+  const loadSales = useCallback(async () => {
+    if (!from || !to) return;
+    const [a, b] = from <= to ? [from, to] : [to, from];
+    const s = await fetch(`/api/product-sales?from=${a}&to=${b}`)
+      .then((r) => (r.ok ? r.json() : null)).catch(() => null);
     setSales(Array.isArray(s) ? s : []);
+  }, [from, to]);
+
+  async function loadProducts() {
+    const p = await fetch("/api/products").then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    setProducts(Array.isArray(p) ? p : []);
   }
 
+  async function load() {
+    await Promise.all([loadProducts(), loadSales()]);
+  }
+
+  useEffect(() => { loadSales(); }, [loadSales]);
+
   useEffect(() => {
-    load();
+    loadProducts();
     fetch("/api/auth/me").then((r) => r.json()).then((u) => { if (u?.role) setRole(u.role); }).catch(() => {});
   }, []);
+
+  function preset(f: Date, t: Date) {
+    setFrom(format(f, "yyyy-MM-dd"));
+    setTo(format(t, "yyyy-MM-dd"));
+  }
 
   function startSell(p: Product) {
     setSellFor(p);
@@ -155,18 +175,44 @@ export default function ProductsPage() {
   const stockValue = products.reduce((s, p) => s + productPrice(p) * p.stock, 0);
   const lowStock = products.filter((p) => p.isActive && p.stock <= p.lowStockAt);
 
+  // Totals for the sales period — unpaid is owed, not earned
+  const paidSales = sales.filter((s) => s.paid);
+  const soldCount = sales.reduce((n, s) => n + s.quantity, 0);
+  const collected = paidSales.reduce((n, s) => n + s.total, 0);
+  const salesProfit = paidSales.reduce((n, s) => n + (s.total - s.unitCost * s.quantity), 0);
+  const owed = sales.filter((s) => !s.paid).reduce((n, s) => n + s.total, 0);
+
   return (
     <div className="p-4 md:p-6 space-y-4 md:space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl md:text-2xl font-bold text-gray-900">Products</h1>
-          <p className="text-sm text-gray-500 mt-1">Stock, cost and selling price</p>
+          <p className="text-sm text-gray-500 mt-1">
+            {section === "items" ? "Stock, cost and selling price" : "What sold, and when"}
+          </p>
         </div>
-        <Button size="sm" onClick={() => { setShowForm(true); setEditId(null); setForm(blank); }}>
-          <Plus className="w-4 h-4 mr-1" /> Add Product
-        </Button>
+        {section === "items" && (
+          <Button size="sm" onClick={() => { setShowForm(true); setEditId(null); setForm(blank); }}>
+            <Plus className="w-4 h-4 mr-1" /> Add Product
+          </Button>
+        )}
       </div>
 
+      {/* Items / Sales */}
+      <div className="flex gap-1 border-b border-gray-200">
+        {([
+          { key: "items", label: `📦 Items (${products.length})` },
+          { key: "sales", label: `💵 Sales (${sales.length})` },
+        ] as const).map((t) => (
+          <button key={t.key} onClick={() => setSection(t.key)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${section === t.key ? "border-pink-600 text-pink-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ─── ITEMS ─────────────────────────────────────────────── */}
+      {section === "items" && (<>
       {/* Summary */}
       {products.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -344,27 +390,81 @@ export default function ProductsPage() {
         </div>
       )}
 
-      {/* Recent sales */}
-      {sales.length > 0 && (
-        <Card>
-          <CardHeader><CardTitle>Recent Sales</CardTitle></CardHeader>
-          <CardContent>
+      </>)}
+
+      {/* ─── SALES ─────────────────────────────────────────────── */}
+      {section === "sales" && (
+        <div className="space-y-4">
+          {/* Date range */}
+          <div className="flex items-end gap-2 flex-wrap">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">From</label>
+              <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-9" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">To</label>
+              <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-9" />
+            </div>
+            <div className="flex gap-1">
+              <Button variant="outline" size="sm" onClick={() => preset(new Date(), new Date())}>Today</Button>
+              <Button variant="outline" size="sm" onClick={() => preset(startOfWeek(new Date(), { weekStartsOn: 1 }), endOfWeek(new Date(), { weekStartsOn: 1 }))}>Week</Button>
+              <Button variant="outline" size="sm" onClick={() => preset(startOfMonth(new Date()), endOfMonth(new Date()))}>Month</Button>
+            </div>
+          </div>
+
+          {/* Period totals */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Card><CardContent className="p-4">
+              <p className="text-xs text-gray-500">Items sold</p>
+              <p className="text-xl font-bold text-gray-900">{soldCount}</p>
+            </CardContent></Card>
+            <Card><CardContent className="p-4">
+              <p className="text-xs text-gray-500">Collected</p>
+              <p className="text-xl font-bold text-gray-900">${collected.toFixed(2)}</p>
+            </CardContent></Card>
+            <Card><CardContent className="p-4">
+              <p className="text-xs text-gray-500">Profit</p>
+              <p className="text-xl font-bold text-green-600">${salesProfit.toFixed(2)}</p>
+            </CardContent></Card>
+            <Card><CardContent className="p-4">
+              <p className="text-xs text-gray-500">Still owed</p>
+              <p className={`text-xl font-bold ${owed > 0 ? "text-amber-600" : "text-gray-900"}`}>${owed.toFixed(2)}</p>
+            </CardContent></Card>
+          </div>
+
+          {sales.length === 0 ? (
+            <Card><CardContent className="py-16 text-center">
+              <DollarSign className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <p className="text-gray-400">No sales in this period</p>
+            </CardContent></Card>
+          ) : (
             <div className="space-y-2">
               {sales.map((s) => (
-                <div key={s.id} className="flex items-center justify-between gap-3 border border-gray-100 rounded-lg px-3 py-2">
+                <div key={s.id} className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-900">
+                    <p className="font-medium text-gray-900">
                       {s.product.name}{s.quantity > 1 ? ` × ${s.quantity}` : ""}
+                      {s.product.brand && <span className="font-normal text-gray-400 text-sm ml-1.5">{s.product.brand}</span>}
                     </p>
-                    <p className="text-xs text-gray-500">
-                      {format(new Date(s.soldAt), "d MMMM, yyyy")}
-                      {s.client ? ` · ${s.client.name}` : " · walk-in"}
+                    <p className="text-sm text-gray-500">
+                      {format(new Date(s.soldAt), "d MMMM, yyyy")} · {format(new Date(s.soldAt), "h:mm a")}
+                      {" · "}
+                      {s.client ? (
+                        <a href={`/admin/clients/${s.client.id}`} className="text-pink-600 hover:underline">{s.client.name}</a>
+                      ) : "walk-in"}
                     </p>
+                    {s.quantity > 1 && (
+                      <p className="text-xs text-gray-400 mt-0.5">${s.unitPrice.toFixed(2)} each</p>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    <Badge variant={s.paid ? "success" : "warning"}>
-                      {s.paid ? `$${s.total.toFixed(2)}` : `$${s.total.toFixed(2)} unpaid`}
-                    </Badge>
+                    <div className="text-right">
+                      <p className="font-semibold text-gray-900">${s.total.toFixed(2)}</p>
+                      <p className="text-xs text-green-600">
+                        +${(s.total - s.unitCost * s.quantity).toFixed(2)} profit
+                      </p>
+                    </div>
+                    <Badge variant={s.paid ? "success" : "warning"}>{s.paid ? "Paid" : "Unpaid"}</Badge>
                     {isAdmin && (
                       <button onClick={() => undoSale(s)} className="text-gray-300 hover:text-red-500" title="Undo this sale">
                         <Trash2 className="w-4 h-4" />
@@ -374,8 +474,8 @@ export default function ProductsPage() {
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
+          )}
+        </div>
       )}
 
       {/* Record a sale */}
