@@ -22,6 +22,7 @@ interface Appointment {
   clientPackageId: string | null;
   paymentStatus: string | null;
   amountPaid: number | null;
+  finalPrice: number | null;
   client: { name: string; phone: string };
   service: { name: string; price: number | null; duration: number };
   staff: { id: string; name: string; color: string } | null;
@@ -73,8 +74,28 @@ export default function AppointmentsPage() {
   const [payMode, setPayMode] = useState<"PAID" | "PARTIAL" | "UNPAID">("PAID");
   const [payAmount, setPayAmount] = useState("");
   const [discount, setDiscount] = useState(0);
-  // What the client actually owes, after any salon-wide offer
+  // A one-off discount given at the till, on top of any salon-wide offer
+  const [payDiscount, setPayDiscount] = useState("");
+  const [payDiscountType, setPayDiscountType] = useState<"amount" | "percent">("amount");
+
+  // Price after the salon-wide offer
   const payPrice = (a: Appointment) => applyDiscount(a.service.price || 0, discount);
+
+  // How much the till discount takes off, never more than the price itself
+  function payDiscountValue(a: Appointment) {
+    const base = payPrice(a);
+    const entered = parseFloat(payDiscount || "0");
+    if (!Number.isFinite(entered) || entered <= 0) return 0;
+    const off = payDiscountType === "percent" ? (base * Math.min(entered, 100)) / 100 : entered;
+    return Math.min(Math.round(off * 100) / 100, base);
+  }
+
+  // What the client actually pays
+  const finalPayPrice = (a: Appointment) =>
+    Math.round((payPrice(a) - payDiscountValue(a)) * 100) / 100;
+
+  // Price already agreed on a saved appointment, for the detail view
+  const agreedPrice = (a: Appointment) => a.finalPrice ?? payPrice(a);
   const [now, setNow] = useState(new Date());
   const [role, setRole] = useState("STAFF");
   const isAdmin = role === "ADMIN";
@@ -158,7 +179,17 @@ export default function AppointmentsPage() {
       updateStatus(appt.id, "COMPLETED");
       return;
     }
-    setPayIntent("complete"); setPayMode("PAID"); setPayAmount(""); setPayFor(appt);
+    setPayIntent("complete"); setPayMode("PAID"); setPayAmount("");
+    resetDiscount(appt); setPayFor(appt);
+  }
+
+  // Reopens with whatever discount was already given, so re-recording a
+  // payment doesn't silently drop it
+  function resetDiscount(appt: Appointment) {
+    const base = payPrice(appt);
+    const already = appt.finalPrice != null && appt.finalPrice < base ? base - appt.finalPrice : 0;
+    setPayDiscount(already ? String(Math.round(already * 100) / 100) : "");
+    setPayDiscountType("amount");
   }
 
   // Record a payment on its own, without changing the appointment's status —
@@ -168,14 +199,17 @@ export default function AppointmentsPage() {
     setPayIntent("record");
     setPayMode(appt.paymentStatus === "PARTIAL" || appt.paymentStatus === "UNPAID" ? appt.paymentStatus : "PAID");
     setPayAmount(appt.amountPaid != null ? String(appt.amountPaid) : "");
+    resetDiscount(appt);
     setPayFor(appt);
   }
 
   async function confirmPayment() {
     if (!payFor) return;
-    const price = payPrice(payFor);
+    const price = finalPayPrice(payFor);
     const amountPaid = payMode === "PAID" ? price : payMode === "PARTIAL" ? parseFloat(payAmount || "0") : 0;
-    const body: Record<string, unknown> = { paymentStatus: payMode, amountPaid };
+    // finalPrice records what was actually agreed, so the client's history
+    // and the balance due reflect the discount rather than the list price
+    const body: Record<string, unknown> = { paymentStatus: payMode, amountPaid, finalPrice: price };
     if (payIntent === "complete") body.status = "COMPLETED";
     await fetch(`/api/appointments/${payFor.id}`, {
       method: "PATCH",
@@ -582,11 +616,11 @@ export default function AppointmentsPage() {
                 <div className="text-sm">
                   <span className="text-gray-500">Payment: </span>
                   {detail.paymentStatus === "PAID" ? (
-                    <span className="font-semibold text-green-700">Paid ${detail.amountPaid ?? payPrice(detail)}</span>
+                    <span className="font-semibold text-green-700">Paid ${detail.amountPaid ?? agreedPrice(detail)}</span>
                   ) : detail.paymentStatus === "PARTIAL" ? (
-                    <span className="font-semibold text-amber-700">Partial ${detail.amountPaid ?? 0} of ${payPrice(detail)} · owes ${(payPrice(detail) - (detail.amountPaid ?? 0)).toFixed(0)}</span>
+                    <span className="font-semibold text-amber-700">Partial ${detail.amountPaid ?? 0} of ${agreedPrice(detail)} · owes ${(agreedPrice(detail) - (detail.amountPaid ?? 0)).toFixed(0)}</span>
                   ) : detail.paymentStatus === "UNPAID" ? (
-                    <span className="font-semibold text-red-600">Not paid · owes ${payPrice(detail)}</span>
+                    <span className="font-semibold text-red-600">Not paid · owes ${agreedPrice(detail)}</span>
                   ) : (
                     <span className="text-gray-400">not recorded</span>
                   )}
@@ -679,9 +713,43 @@ export default function AppointmentsPage() {
                 {discount > 0 && <span className="text-pink-600 font-medium ml-1">({discount}% off)</span>}
               </p>
             </div>
+
+            {/* One-off discount for this client */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Discount <span className="font-normal text-gray-400">(leave empty for none)</span>
+              </label>
+              <div className="flex gap-2">
+                <Input type="number" min={0} step="0.01" value={payDiscount}
+                  onChange={(e) => setPayDiscount(e.target.value)}
+                  placeholder={payDiscountType === "percent" ? "e.g. 10" : "e.g. 5"} />
+                <div className="flex rounded-lg border border-gray-200 overflow-hidden flex-shrink-0">
+                  {(["amount", "percent"] as const).map((t) => (
+                    <button key={t} type="button" onClick={() => setPayDiscountType(t)}
+                      className={`px-3 text-sm font-medium transition-colors ${payDiscountType === t ? "bg-pink-600 text-white" : "bg-white text-gray-500 hover:bg-gray-50"}`}>
+                      {t === "amount" ? "$" : "%"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {payDiscountValue(payFor) > 0 && (
+                <div className="mt-2 bg-pink-50 border border-pink-200 rounded-lg px-3 py-2 text-sm">
+                  <div className="flex justify-between text-gray-600">
+                    <span>Price</span><span>${payPrice(payFor).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-pink-700">
+                    <span>Discount</span><span>−${payDiscountValue(payFor).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-semibold text-gray-900 border-t border-pink-200 mt-1 pt-1">
+                    <span>To pay</span><span>${finalPayPrice(payFor).toFixed(2)}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="space-y-2">
               {([
-                { value: "PAID", label: `Paid in full ($${payPrice(payFor)})` },
+                { value: "PAID", label: `Paid in full ($${finalPayPrice(payFor).toFixed(2)})` },
                 { value: "PARTIAL", label: "Partially paid" },
                 { value: "UNPAID", label: "Not paid" },
               ] as const).map((opt) => (
@@ -694,10 +762,10 @@ export default function AppointmentsPage() {
               {payMode === "PARTIAL" && (
                 <div className="pl-1 pt-1">
                   <label className="block text-xs text-gray-500 mb-1">Amount paid ($)</label>
-                  <Input type="number" step="0.01" min={0} max={payPrice(payFor) || undefined}
+                  <Input type="number" step="0.01" min={0} max={finalPayPrice(payFor) || undefined}
                     value={payAmount} onChange={(e) => setPayAmount(e.target.value)} placeholder="e.g. 20" autoFocus />
                   {payAmount && payFor.service.price && (
-                    <p className="text-xs text-amber-600 mt-1">Balance due: ${(payPrice(payFor) - parseFloat(payAmount || "0")).toFixed(2)}</p>
+                    <p className="text-xs text-amber-600 mt-1">Balance due: ${(finalPayPrice(payFor) - parseFloat(payAmount || "0")).toFixed(2)}</p>
                   )}
                 </div>
               )}

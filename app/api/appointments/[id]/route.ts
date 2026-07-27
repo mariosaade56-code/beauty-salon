@@ -9,6 +9,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if ("amountPaid" in body) {
     body.amountPaid = body.amountPaid != null ? parseFloat(body.amountPaid) : null;
   }
+  if ("finalPrice" in body) {
+    body.finalPrice = body.finalPrice != null ? parseFloat(body.finalPrice) : null;
+  }
 
   const existing = await prisma.appointment.findUnique({ where: { id } });
 
@@ -42,18 +45,24 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     !appointment.clientPackageId &&
     appointment.service.price
   ) {
-    const price = appointment.service.price;
+    // What was actually agreed — a discount at the till, or the salon-wide
+    // offer — rather than the service's list price.
+    const price = appointment.finalPrice ?? appointment.service.price;
+    const discounted = price < appointment.service.price;
     const status = appointment.paymentStatus || "PAID";
     const paidAmount =
       status === "PAID" ? price : status === "PARTIAL" ? Math.min(appointment.amountPaid ?? 0, price) : 0;
     const balance = price - paidAmount;
 
     if (paidAmount > 0) {
+      const label = discounted
+        ? `${appointment.service.name} (discounted from $${appointment.service.price})`
+        : appointment.service.name;
       await prisma.clientTransaction.create({
         data: {
           clientId: appointment.clientId,
           date: appointment.startTime,
-          description: status === "PARTIAL" ? `${appointment.service.name} (partial payment)` : appointment.service.name,
+          description: status === "PARTIAL" ? `${label} (partial payment)` : label,
           amount: paidAmount,
           paid: true,
           reference: "Appointment",

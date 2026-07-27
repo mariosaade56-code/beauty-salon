@@ -144,6 +144,8 @@ model Appointment {
   clientPackage     ClientPackage? @relation(fields: [clientPackageId], references: [id])
   paymentStatus     PaymentStatus?
   amountPaid        Float?
+  // Agreed price after any discount. Null means the service price stands.
+  finalPrice        Float?
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 }
