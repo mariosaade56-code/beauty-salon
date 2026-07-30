@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { format } from "date-fns";
 import { applyDiscount, discountPercent } from "@/lib/pricing";
-import { X, UserCheck } from "lucide-react";
+import { X, UserCheck, Search } from "lucide-react";
 
 interface Props {
   onClose: () => void;
@@ -26,6 +26,7 @@ interface ClientSuggestion {
 export default function NewAppointmentModal({ onClose, onCreated, initialDate, initialTime, initialStaffId }: Props) {
   const [services, setServices] = useState<{ id: string; name: string; duration: number; price: number | null }[]>([]);
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
+  const [serviceQuery, setServiceQuery] = useState("");
   const [packages, setPackages] = useState<{ id: string; name: string; serviceId: string; sessionCount: number; price: number; isActive: boolean; services?: { id: string; name: string; duration: number }[] }[]>([]);
   const [packageId, setPackageId] = useState("");
   // A package can cover several services — which one is this session for?
@@ -91,6 +92,13 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
   // Services can be stacked: availability needs a slot fitting their combined time
   const bookingServiceIds = selectedPackage ? [pkgSessionServiceId] : selectedServices;
   const effectiveServiceId = bookingServiceIds[0] || "";
+  // Matches anywhere in the name, so "ce" finds Cellulite and "neck" finds
+  // Cheeks + Neck. Anything already ticked stays visible.
+  const q = serviceQuery.trim().toLowerCase();
+  const shownServices = q
+    ? services.filter((s) => s.name.toLowerCase().includes(q) || selectedServices.includes(s.id))
+    : services;
+
   const chosen = services.filter((s) => selectedServices.includes(s.id));
   const totalDuration = chosen.reduce((sum, s) => sum + s.duration, 0);
   const fullPrice = chosen.reduce((sum, s) => sum + (s.price || 0), 0);
@@ -310,8 +318,27 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
               )
             ) : (
               <>
+                {/* Type a couple of letters instead of scrolling the whole list */}
+                <div className="relative mb-1.5">
+                  <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <Input value={serviceQuery} autoComplete="off"
+                    onChange={(e) => setServiceQuery(e.target.value)}
+                    placeholder="Search services… e.g. ce for Cellulite"
+                    className="pl-9 pr-9" />
+                  {serviceQuery && (
+                    <button type="button" onClick={() => setServiceQuery("")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1">
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
                 <div className="border border-gray-200 rounded-lg max-h-44 overflow-y-auto divide-y divide-gray-50">
-                  {services.map((s) => {
+                  {shownServices.length === 0 && (
+                    <p className="px-3 py-3 text-sm text-gray-400 text-center">
+                      No service matches “{serviceQuery}”
+                    </p>
+                  )}
+                  {shownServices.map((s) => {
                     const on = selectedServices.includes(s.id);
                     return (
                       <button key={s.id} type="button" onClick={() => toggleService(s.id)}
@@ -327,7 +354,8 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
                 {chosen.length > 0 && (
                   <div className="mt-1.5 flex items-center justify-between text-xs bg-sand/40 border border-gray-200 rounded-lg px-3 py-2">
                     <span className="text-gray-700 truncate mr-2">
-                      {chosen.length} service{chosen.length > 1 ? "s" : ""} · {totalDuration} min
+                      {/* Named, so a search that hides them doesn't lose track */}
+                      {chosen.map((s) => s.name).join(", ")} · {totalDuration} min
                       {discount > 0 && <span className="text-pink-700 font-medium"> · {discount}% off</span>}
                     </span>
                     <span className="font-semibold text-gray-900 flex-shrink-0">
