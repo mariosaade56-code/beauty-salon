@@ -7,7 +7,7 @@ import {
   format, addDays, addMonths, startOfWeek, endOfWeek, startOfMonth, endOfMonth,
   isSameDay, isSameMonth, isToday,
 } from "date-fns";
-import { ChevronLeft, ChevronRight, Plus, Phone, X, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Phone, X, Trash2, Pencil } from "lucide-react";
 import NewAppointmentModal from "@/components/admin/new-appointment-modal";
 import { applyDiscount, discountPercent } from "@/lib/pricing";
 
@@ -19,6 +19,7 @@ interface Appointment {
   status: string;
   source: string;
   notes: string | null;
+  serviceId: string;
   clientPackageId: string | null;
   paymentStatus: string | null;
   amountPaid: number | null;
@@ -105,6 +106,88 @@ export default function AppointmentsPage() {
   const [payTodo, setPayTodo] = useState("");
   // Payment dialog: "complete" also marks Done; "record" just logs a payment
   const [payIntent, setPayIntent] = useState<"complete" | "record">("complete");
+
+  // Changing what was booked — e.g. the client was talked into a package
+  const [editFor, setEditFor] = useState<Appointment | null>(null);
+  const [editServices, setEditServices] = useState<{ id: string; name: string; duration: number; price: number | null }[]>([]);
+  const [editPackages, setEditPackages] = useState<{ id: string; name: string; sessionCount: number; price: number; isActive: boolean; serviceId: string; services?: { id: string; name: string }[] }[]>([]);
+  const [editServiceId, setEditServiceId] = useState("");
+  const [editPackageId, setEditPackageId] = useState("");
+  const [editSearch, setEditSearch] = useState("");
+  const [editPkgPay, setEditPkgPay] = useState<"PAID" | "PARTIAL" | "UNPAID">("PAID");
+  const [editPkgAmount, setEditPkgAmount] = useState("");
+  const [editOwned, setEditOwned] = useState<{ remaining: number; total: number } | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  function startEditBooking(appt: Appointment) {
+    setEditFor(appt);
+    setEditServiceId(appt.serviceId || "");
+    setEditPackageId("");
+    setEditSearch("");
+    setEditPkgPay("PAID");
+    setEditPkgAmount("");
+    setEditOwned(null);
+    setDetail(null);
+    if (editServices.length === 0) {
+      fetch("/api/services").then((r) => r.json()).then((d) => setEditServices(Array.isArray(d) ? d : [])).catch(() => {});
+    }
+    if (editPackages.length === 0) {
+      fetch("/api/packages").then((r) => r.json())
+        .then((d) => setEditPackages(Array.isArray(d) ? d.filter((p) => p.isActive) : [])).catch(() => {});
+    }
+  }
+
+  // Does this client already have sessions left on the chosen package?
+  useEffect(() => {
+    setEditOwned(null);
+    if (!editFor || !editPackageId) return;
+    fetch(`/api/clients/${editFor.clientId}/packages`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((cps) => {
+        const now = Date.now();
+        const mine = (Array.isArray(cps) ? cps : []).filter(
+          (cp) => cp.packageId === editPackageId && (!cp.expiresAt || new Date(cp.expiresAt).getTime() > now)
+        );
+        setEditOwned({
+          remaining: mine.reduce((s, cp) => s + Math.max(cp.sessionsTotal - cp.sessionsUsed, 0), 0),
+          total: mine.reduce((s, cp) => s + cp.sessionsTotal, 0),
+        });
+      })
+      .catch(() => {});
+  }, [editFor, editPackageId]);
+
+  // A package only covers certain services — keep the pick valid
+  useEffect(() => {
+    if (!editPackageId) return;
+    const pkg = editPackages.find((p) => p.id === editPackageId);
+    if (!pkg) return;
+    const covered = pkg.services?.length ? pkg.services.map((s) => s.id) : [pkg.serviceId];
+    if (!covered.includes(editServiceId)) setEditServiceId(covered[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editPackageId, editPackages]);
+
+  async function saveEditBooking() {
+    if (!editFor) return;
+    setSavingEdit(true);
+    const body: Record<string, unknown> = { packageId: editPackageId || null };
+    if (editServiceId) body.serviceId = editServiceId;
+    if (editPackageId) {
+      body.packagePaymentStatus = editPkgPay;
+      if (editPkgPay === "PARTIAL") body.packageAmountPaid = editPkgAmount;
+    }
+    const res = await fetch(`/api/appointments/${editFor.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).catch(() => null);
+    setSavingEdit(false);
+    if (!res || !res.ok) {
+      const d = res ? await res.json().catch(() => ({})) : {};
+      return alert(d.error || "Could not save the change — please try again.");
+    }
+    setEditFor(null);
+    load();
+  }
 
   // Day view is tighter — good default on phones
   useEffect(() => {
@@ -600,9 +683,14 @@ export default function AppointmentsPage() {
                 </p>
               )}
               {detail.notes && <p className="text-gray-500 italic">{detail.notes}</p>}
-              <div className="flex gap-1.5 pt-1 flex-wrap">
+              <div className="flex gap-1.5 pt-1 flex-wrap items-center">
                 <Badge variant={statusColors[detail.status] || "outline"}>{detail.status}</Badge>
                 <Badge variant="outline">{detail.source}</Badge>
+                {detail.clientPackageId && <Badge variant="default">Package</Badge>}
+                <button onClick={() => startEditBooking(detail)}
+                  className="ml-auto text-pink-600 text-sm font-medium hover:underline flex items-center gap-1">
+                  <Pencil className="w-3.5 h-3.5" /> Change service
+                </button>
               </div>
             </div>
 
@@ -693,6 +781,128 @@ export default function AppointmentsPage() {
                   </Button>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Change what was booked — swap the service, or move it onto a package */}
+      {editFor && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4 max-h-[calc(100dvh-2rem)] overflow-y-auto">
+            <div className="flex items-start justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Change booking</h2>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  {editFor.client.name} · {format(new Date(editFor.startTime), "d MMM, h:mm a")}
+                </p>
+              </div>
+              <button onClick={() => setEditFor(null)}><X className="w-5 h-5 text-gray-400" /></button>
+            </div>
+
+            {/* Package */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Package</label>
+              <select value={editPackageId}
+                onChange={(e) => setEditPackageId(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-black bg-white">
+                <option value="">— No package, pay per visit —</option>
+                {editPackages.map((p) => (
+                  <option key={p.id} value={p.id}>📦 {p.name} ({p.sessionCount} sessions · ${p.price})</option>
+                ))}
+              </select>
+              {editFor.clientPackageId && !editPackageId && (
+                <p className="text-xs text-amber-600 mt-1">
+                  This visit is on a package now — saving gives that session back.
+                </p>
+              )}
+            </div>
+
+            {/* Buying, or already owns it */}
+            {editPackageId && (
+              <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 space-y-2">
+                {editOwned === null ? (
+                  <p className="text-xs text-gray-400">Checking {editFor.client.name}&apos;s packages…</p>
+                ) : editOwned.remaining > 0 ? (
+                  <p className="text-xs text-green-700 font-medium">
+                    ✓ {editFor.client.name} has {editOwned.remaining} of {editOwned.total} sessions left — this visit uses 1
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-xs text-amber-700 font-medium">
+                      New package (${editPackages.find((p) => p.id === editPackageId)?.price}) will be added to their file
+                    </p>
+                    {([
+                      { value: "PAID", label: `Paid in full` },
+                      { value: "PARTIAL", label: "Partially paid" },
+                      { value: "UNPAID", label: "Not paid yet" },
+                    ] as const).map((opt) => (
+                      <label key={opt.value}
+                        className={`flex items-center gap-2.5 border rounded-lg px-3 py-2 cursor-pointer bg-white transition-colors ${editPkgPay === opt.value ? "border-pink-600" : "border-gray-200"}`}>
+                        <input type="radio" name="editpkgpay" checked={editPkgPay === opt.value} onChange={() => setEditPkgPay(opt.value)} />
+                        <span className="text-sm text-gray-900">{opt.label}</span>
+                      </label>
+                    ))}
+                    {editPkgPay === "PARTIAL" && (
+                      <Input type="number" step="0.01" min={0} value={editPkgAmount}
+                        onChange={(e) => setEditPkgAmount(e.target.value)} placeholder="Amount paid" />
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Service */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Service{editPackageId ? " for this session" : ""}
+              </label>
+              {(() => {
+                const pkg = editPackages.find((p) => p.id === editPackageId);
+                const pool = pkg
+                  ? (pkg.services?.length ? pkg.services : [{ id: pkg.serviceId, name: "" }])
+                      .map((s) => editServices.find((x) => x.id === s.id))
+                      .filter((s): s is NonNullable<typeof s> => !!s)
+                  : editServices;
+                const q = editSearch.trim().toLowerCase();
+                const shown = q ? pool.filter((s) => s.name.toLowerCase().includes(q) || s.id === editServiceId) : pool;
+                return (
+                  <>
+                    {!pkg && (
+                      <div className="relative mb-1.5">
+                        <Input value={editSearch} onChange={(e) => setEditSearch(e.target.value)}
+                          placeholder="Search services… e.g. ce for Cellulite" autoComplete="off" />
+                      </div>
+                    )}
+                    <div className="border border-gray-200 rounded-lg max-h-44 overflow-y-auto divide-y divide-gray-50">
+                      {shown.length === 0 ? (
+                        <p className="px-3 py-3 text-sm text-gray-400 text-center">No service matches &quot;{editSearch}&quot;</p>
+                      ) : shown.map((s) => {
+                        const on = editServiceId === s.id;
+                        return (
+                          <button key={s.id} type="button" onClick={() => setEditServiceId(s.id)}
+                            className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between transition-colors ${on ? "bg-pink-50 text-pink-800" : "hover:bg-gray-50 text-gray-800"}`}>
+                            <span>{on ? "✓ " : ""}{s.name}</span>
+                            <span className="text-xs text-gray-400 flex-shrink-0 ml-2">
+                              {s.duration}m{!pkg && s.price ? ` · $${s.price}` : ""}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                );
+              })()}
+              <p className="text-xs text-gray-400 mt-1">
+                Changing the service moves the end time to match its length.
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setEditFor(null)}>Cancel</Button>
+              <Button className="flex-1" onClick={saveEditBooking} disabled={savingEdit || !editServiceId}>
+                {savingEdit ? "Saving…" : "Save change"}
+              </Button>
             </div>
           </div>
         </div>
