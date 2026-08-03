@@ -34,6 +34,12 @@ const VISIT_FILTERS = [
   { key: "other", label: "Other" },
 ] as const;
 
+interface Prepaid {
+  id: string; amount: number; paid: boolean; notes: string | null;
+  description: string | null; createdAt: string; usedAt: string | null;
+  service: { id: string; name: string; duration: number } | null;
+}
+
 const KNOWN_BUCKETS = ["laser", "cellulite", "skincare"];
 function visitBucket(v: Visit): string {
   const cat = (v.service.category || "").toLowerCase();
@@ -52,6 +58,64 @@ export default function ClientDetailPage() {
   const [tab, setTab] = useState<"record" | "visits" | "packages" | "photos">("record");
   const [visits, setVisits] = useState<Visit[]>([]);
   const [visitFilter, setVisitFilter] = useState<string>("all");
+  // Paid for, not booked yet
+  const [prepaid, setPrepaid] = useState<Prepaid[]>([]);
+  const [services, setServices] = useState<{ id: string; name: string; price: number | null }[]>([]);
+  const [showPrepaidForm, setShowPrepaidForm] = useState(false);
+  const [ppServiceId, setPpServiceId] = useState("");
+  const [ppSearch, setPpSearch] = useState("");
+  const [ppOther, setPpOther] = useState("");
+  const [ppAmount, setPpAmount] = useState("");
+  const [ppPaid, setPpPaid] = useState(true);
+  const [ppNotes, setPpNotes] = useState("");
+  const [savingPp, setSavingPp] = useState(false);
+
+  async function loadPrepaid() {
+    const d = await fetch(`/api/clients/${id}/prepaid`).then((r) => (r.ok ? r.json() : [])).catch(() => []);
+    setPrepaid(Array.isArray(d) ? d : []);
+  }
+
+  function resetPrepaidForm() {
+    setPpServiceId(""); setPpSearch(""); setPpOther(""); setPpAmount(""); setPpPaid(true); setPpNotes("");
+  }
+
+  async function addPrepaid(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingPp(true);
+    const res = await fetch(`/api/clients/${id}/prepaid`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        serviceId: ppServiceId || null,
+        description: ppServiceId ? null : ppOther,
+        amount: ppAmount,
+        paid: ppPaid,
+        notes: ppNotes,
+      }),
+    }).catch(() => null);
+    setSavingPp(false);
+    if (!res || !res.ok) {
+      const d = res ? await res.json().catch(() => ({})) : {};
+      return alert(d.error || "Could not save — please try again.");
+    }
+    resetPrepaidForm(); setShowPrepaidForm(false);
+    loadPrepaid(); load();
+  }
+
+  async function togglePrepaidUsed(pp: Prepaid) {
+    await fetch(`/api/prepaid/${pp.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ used: !pp.usedAt }),
+    });
+    loadPrepaid();
+  }
+
+  async function deletePrepaid(pp: Prepaid) {
+    const what = pp.service?.name || pp.description || "this";
+    if (!confirm(`Remove the prepaid ${what}? The $${pp.amount} also comes out of their history.`)) return;
+    await fetch(`/api/prepaid/${pp.id}`, { method: "DELETE" });
+    loadPrepaid(); load();
+  }
   const [profile, setProfile] = useState({ name: "", phone: "", email: "", dob: "", address: "", notes: "" });
   const [profileSaved, setProfileSaved] = useState(false);
   const [txForm, setTxForm] = useState({ date: new Date().toISOString().slice(0, 10), description: "", amount: "", paid: true, reference: "" });
@@ -95,6 +159,8 @@ export default function ClientDetailPage() {
   useEffect(() => {
     fetch("/api/auth/me").then((r) => r.json()).then((u) => { if (u?.role) setRole(u.role); }).catch(() => {});
     loadTodos();
+    loadPrepaid();
+    fetch("/api/services").then((r) => r.json()).then((d) => setServices(Array.isArray(d) ? d : [])).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -365,6 +431,133 @@ export default function ClientDetailPage() {
                   <textarea className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm min-h-[70px]" value={profile.notes} onChange={(e) => setProfile({ ...profile, notes: e.target.value })} placeholder="Allergies, preferences, skin type…" />
                 </div>
               </form>
+            </CardContent>
+          </Card>
+
+          {/* Paid up front, nothing booked yet */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Paid in Advance</CardTitle>
+                <Button size="sm" variant={showPrepaidForm ? "outline" : "default"}
+                  onClick={() => { setShowPrepaidForm(!showPrepaidForm); resetPrepaidForm(); }}>
+                  {showPrepaidForm ? "Cancel" : <><Plus className="w-4 h-4 mr-1" /> Add</>}
+                </Button>
+              </div>
+              <p className="text-sm text-gray-500">Paid for, waiting to be booked</p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {showPrepaidForm && (
+                <form onSubmit={addPrepaid} className="space-y-3 border border-gray-200 rounded-xl p-3 bg-gray-50">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">What did they pay for?</label>
+                    <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-black mb-1.5"
+                      placeholder="Search services… e.g. ce for Cellulite"
+                      value={ppSearch} onChange={(e) => { setPpSearch(e.target.value); setPpServiceId(""); }} />
+                    <div className="border border-gray-200 rounded-lg max-h-36 overflow-y-auto divide-y divide-gray-100 bg-white">
+                      {(() => {
+                        const q = ppSearch.trim().toLowerCase();
+                        const shown = q
+                          ? services.filter((s) => s.name.toLowerCase().includes(q) || s.id === ppServiceId)
+                          : services;
+                        if (shown.length === 0) {
+                          return <p className="px-3 py-3 text-sm text-gray-400 text-center">No service matches — use &quot;something else&quot; below</p>;
+                        }
+                        return shown.map((s) => {
+                          const on = ppServiceId === s.id;
+                          return (
+                            <button key={s.id} type="button"
+                              onClick={() => { setPpServiceId(s.id); setPpOther(""); if (s.price && !ppAmount) setPpAmount(String(s.price)); }}
+                              className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between ${on ? "bg-pink-50 text-pink-800" : "hover:bg-gray-50 text-gray-800"}`}>
+                              <span>{on ? "✓ " : ""}{s.name}</span>
+                              {s.price ? <span className="text-xs text-gray-400">${s.price}</span> : null}
+                            </button>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+                  {!ppServiceId && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">…or something else</label>
+                      <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-black"
+                        placeholder="e.g. Bridal package, gift voucher"
+                        value={ppOther} onChange={(e) => setPpOther(e.target.value)} />
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Amount ($) *</label>
+                      <input type="number" step="0.01" min={0} required
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-black"
+                        value={ppAmount} onChange={(e) => setPpAmount(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
+                      <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-black"
+                        placeholder="Optional" value={ppNotes} onChange={(e) => setPpNotes(e.target.value)} />
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm text-gray-700">
+                    <input type="checkbox" checked={ppPaid} onChange={(e) => setPpPaid(e.target.checked)} />
+                    Money received
+                  </label>
+                  <Button type="submit" size="sm" disabled={savingPp || (!ppServiceId && !ppOther.trim())}>
+                    {savingPp ? "Saving…" : "Save"}
+                  </Button>
+                </form>
+              )}
+
+              {prepaid.filter((pp) => !pp.usedAt).length === 0 && !showPrepaidForm ? (
+                <p className="text-center text-gray-400 py-4 text-sm">Nothing paid in advance</p>
+              ) : (
+                <div className="space-y-2">
+                  {prepaid.filter((pp) => !pp.usedAt).map((pp) => (
+                    <div key={pp.id} className="flex items-center justify-between gap-3 border border-amber-200 bg-amber-50 rounded-xl px-3 py-2.5">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900">
+                          {pp.service?.name || pp.description}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {format(new Date(pp.createdAt), "d MMMM, yyyy")}
+                          {pp.notes ? ` · ${pp.notes}` : ""}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <Badge variant={pp.paid ? "success" : "warning"}>
+                          ${pp.amount.toFixed(2)}{pp.paid ? "" : " unpaid"}
+                        </Badge>
+                        <Button size="sm" variant="outline" onClick={() => togglePrepaidUsed(pp)}>Done</Button>
+                        {isAdmin && (
+                          <button onClick={() => deletePrepaid(pp)} className="text-gray-300 hover:text-red-500">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Already used */}
+              {prepaid.some((pp) => pp.usedAt) && (
+                <details>
+                  <summary className="text-xs text-gray-500 cursor-pointer">
+                    {prepaid.filter((pp) => pp.usedAt).length} already used
+                  </summary>
+                  <div className="space-y-1.5 mt-2">
+                    {prepaid.filter((pp) => pp.usedAt).map((pp) => (
+                      <div key={pp.id} className="flex items-center justify-between gap-3 border border-gray-100 rounded-lg px-3 py-2">
+                        <p className="text-sm text-gray-500 line-through">{pp.service?.name || pp.description}</p>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className="text-xs text-gray-400">${pp.amount.toFixed(2)}</span>
+                          <Button size="sm" variant="ghost" onClick={() => togglePrepaidUsed(pp)}>Undo</Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
             </CardContent>
           </Card>
 
