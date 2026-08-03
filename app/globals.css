@@ -12,11 +12,12 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* The salon site and admin are designed light-only — every surface is a
+   hardcoded white or cream. The starter's dark-mode override turned the
+   inherited text colour near-white, which made anything without an explicit
+   colour (form fields especially) invisible on a Mac set to dark mode. */
+:root {
+  color-scheme: light;
 }
 
 body {

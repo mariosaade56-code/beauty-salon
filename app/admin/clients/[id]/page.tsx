@@ -412,27 +412,27 @@ export default function ClientDetailPage() {
               <form onSubmit={saveProfile} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
-                  <input required className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} />
+                  <input required className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900" value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
-                  <input type="date" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={profile.dob} onChange={(e) => setProfile({ ...profile, dob: e.target.value })} />
+                  <input type="date" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900" value={profile.dob} onChange={(e) => setProfile({ ...profile, dob: e.target.value })} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Phone *</label>
-                  <input required className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} />
+                  <input required className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900" value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                  <input type="email" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={profile.email} onChange={(e) => setProfile({ ...profile, email: e.target.value })} />
+                  <input type="email" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900" value={profile.email} onChange={(e) => setProfile({ ...profile, email: e.target.value })} />
                 </div>
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
-                  <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={profile.address} onChange={(e) => setProfile({ ...profile, address: e.target.value })} />
+                  <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900" value={profile.address} onChange={(e) => setProfile({ ...profile, address: e.target.value })} />
                 </div>
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                  <textarea className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm min-h-[70px]" value={profile.notes} onChange={(e) => setProfile({ ...profile, notes: e.target.value })} placeholder="Allergies, preferences, skin type…" />
+                  <textarea className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 min-h-[70px]" value={profile.notes} onChange={(e) => setProfile({ ...profile, notes: e.target.value })} placeholder="Allergies, preferences, skin type…" />
                 </div>
               </form>
             </CardContent>
@@ -613,19 +613,19 @@ export default function ClientDetailPage() {
               <form onSubmit={addTransaction} className="grid grid-cols-2 md:grid-cols-6 gap-2 items-end">
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Date</label>
-                  <input type="date" required className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm" value={txForm.date} onChange={(e) => setTxForm({ ...txForm, date: e.target.value })} />
+                  <input type="date" required className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-gray-900" value={txForm.date} onChange={(e) => setTxForm({ ...txForm, date: e.target.value })} />
                 </div>
                 <div className="col-span-2 md:col-span-2">
                   <label className="block text-xs text-gray-500 mb-1">Description</label>
-                  <input required className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm" placeholder="e.g. Laser session, package payment…" value={txForm.description} onChange={(e) => setTxForm({ ...txForm, description: e.target.value })} />
+                  <input required className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-gray-900" placeholder="e.g. Laser session, package payment…" value={txForm.description} onChange={(e) => setTxForm({ ...txForm, description: e.target.value })} />
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Amount ($)</label>
-                  <input type="number" step="0.01" required className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm" value={txForm.amount} onChange={(e) => setTxForm({ ...txForm, amount: e.target.value })} />
+                  <input type="number" step="0.01" required className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-gray-900" value={txForm.amount} onChange={(e) => setTxForm({ ...txForm, amount: e.target.value })} />
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Reference</label>
-                  <input className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm" placeholder="Optional" value={txForm.reference} onChange={(e) => setTxForm({ ...txForm, reference: e.target.value })} />
+                  <input className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-gray-900" placeholder="Optional" value={txForm.reference} onChange={(e) => setTxForm({ ...txForm, reference: e.target.value })} />
                 </div>
                 <div className="flex items-center gap-2">
                   <label className="flex items-center gap-1.5 text-sm text-gray-600">
