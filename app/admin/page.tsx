@@ -21,6 +21,12 @@ interface Appointment {
   staff: { name: string } | null;
 }
 
+interface ProductSale {
+  quantity: number;
+  total: number;
+  paid: boolean;
+}
+
 const statusColors: Record<string, "default" | "success" | "warning" | "destructive" | "outline"> = {
   CONFIRMED: "success",
   PENDING: "warning",
@@ -34,6 +40,7 @@ export default function DashboardPage() {
   const [from, setFrom] = useState(todayStr);
   const [to, setTo] = useState(todayStr);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [sales, setSales] = useState<ProductSale[]>([]);
   const [role, setRole] = useState<string>("ADMIN");
   const [todos, setTodos] = useState<{ id: string; description: string; fromService: string | null; createdAt: string; client: { id: string; name: string } }[]>([]);
 
@@ -53,6 +60,11 @@ export default function DashboardPage() {
     fetch(`/api/appointments?from=${a}&to=${b}`)
       .then((r) => r.json())
       .then((d) => setAppointments(Array.isArray(d) ? d : []));
+    // Products sold count towards the day's takings too
+    fetch(`/api/product-sales?from=${a}&to=${b}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d) => setSales(Array.isArray(d) ? d : []))
+      .catch(() => setSales([]));
   }, [from, to]);
 
   const isStaff = role === "STAFF";
@@ -64,10 +76,14 @@ export default function DashboardPage() {
   const pending = active.filter((a) => a.status === "PENDING").length;
   const completed = active.filter((a) => a.status === "COMPLETED");
   // Money actually collected: recorded payment if present, else full price
-  const revenue = completed.reduce(
+  const serviceRevenue = completed.reduce(
     (sum, a) => sum + (a.paymentStatus ? (a.amountPaid ?? 0) : (a.service.price || 0)),
     0
   );
+  // Unpaid product sales are owed, not earned — same rule as services
+  const productRevenue = sales.filter((s) => s.paid).reduce((sum, s) => sum + s.total, 0);
+  const productCount = sales.filter((s) => s.paid).reduce((sum, s) => sum + s.quantity, 0);
+  const revenue = serviceRevenue + productRevenue;
 
   function preset(f: Date, t: Date) {
     setFrom(format(f, "yyyy-MM-dd"));
@@ -109,7 +125,12 @@ export default function DashboardPage() {
         <StatCard icon={Calendar} label="Appointments" value={active.length} color="pink" />
         <StatCard icon={Clock} label="Pending" value={pending} color="yellow" />
         {!isStaff && <StatCard icon={TrendingUp} label="Completed" value={completed.length} color="green" />}
-        {!isStaff && <StatCard icon={DollarSign} label="Revenue" value={`$${revenue.toFixed(0)}`} color="purple" />}
+        {!isStaff && (
+          <StatCard icon={DollarSign} label="Revenue" value={`$${revenue.toFixed(0)}`} color="purple"
+            note={productRevenue > 0
+              ? `Services $${serviceRevenue.toFixed(0)} · Products $${productRevenue.toFixed(0)} (${productCount})`
+              : undefined} />
+        )}
       </div>
 
       {/* Clients with unfinished work */}
@@ -176,12 +197,13 @@ export default function DashboardPage() {
 }
 
 function StatCard({
-  icon: Icon, label, value, color,
+  icon: Icon, label, value, color, note,
 }: {
   icon: React.ElementType;
   label: string;
   value: string | number;
   color: string;
+  note?: string;
 }) {
   const colorMap: Record<string, string> = {
     pink: "bg-pink-50 text-pink-600",
@@ -196,6 +218,7 @@ function StatCard({
           <div>
             <p className="text-sm text-gray-500">{label}</p>
             <p className="text-2xl font-bold text-gray-900 mt-1">{value}</p>
+            {note && <p className="text-xs text-gray-400 mt-1">{note}</p>}
           </div>
           <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${colorMap[color]}`}>
             <Icon className="w-6 h-6" />
