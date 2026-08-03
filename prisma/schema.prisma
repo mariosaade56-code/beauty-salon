@@ -124,8 +124,12 @@ model Prepayment {
   description   String?
   amount        Float
   paid          Boolean   @default(true)
+  // A one-off deal can cover several visits — "2 laser sessions for $120"
+  sessionsTotal Int       @default(1)
+  sessionsUsed  Int       @default(0)
   notes         String?
   transactionId String?
+  appointments  Appointment[]
   createdAt     DateTime  @default(now())
   usedAt        DateTime?
 }
@@ -163,6 +167,9 @@ model Appointment {
   rebookReminderSent Boolean       @default(false)
   clientPackageId   String?
   clientPackage     ClientPackage? @relation(fields: [clientPackageId], references: [id])
+  // A visit drawn from a one-off prepaid deal on the client's file
+  prepaymentId      String?
+  prepayment        Prepayment?    @relation(fields: [prepaymentId], references: [id])
   paymentStatus     PaymentStatus?
   amountPaid        Float?
   // Agreed price after any discount. Null means the service price stands.

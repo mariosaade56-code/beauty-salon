@@ -37,12 +37,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   const paid = body.paid !== false;
+  const sessionsTotal = Math.max(Number(body.sessionsTotal) || 1, 1);
 
   // Show the money in the client's own history straight away
   const tx = await prisma.clientTransaction.create({
     data: {
       clientId: id,
-      description: `${label} (paid in advance)`,
+      description: `${label}${sessionsTotal > 1 ? ` × ${sessionsTotal}` : ""} (paid in advance)`,
       amount,
       paid,
       reference: "Prepaid",
@@ -56,6 +57,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       description: service ? null : body.description.trim(),
       amount,
       paid,
+      sessionsTotal,
       notes: body.notes?.trim() || null,
       transactionId: tx.id,
     },

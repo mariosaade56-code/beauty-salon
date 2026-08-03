@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { clientName, phone, email, staffId, startTime, notes, source, packageId, serviceIds } = body;
+  const { clientName, phone, email, staffId, startTime, notes, source, packageId, serviceIds, prepaymentId } = body;
   let { serviceId } = body;
 
   // Multi-service booking: create consecutive appointments with the same staff
@@ -173,6 +173,19 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Drawing on a one-off deal already paid for on the client's file
+  let usePrepaymentId: string | null = null;
+  if (prepaymentId && !clientPackageId) {
+    const pre = await prisma.prepayment.findUnique({ where: { id: prepaymentId } });
+    if (!pre || pre.clientId !== client.id) {
+      return NextResponse.json({ error: "Prepaid credit not found for this client" }, { status: 400 });
+    }
+    if (pre.sessionsUsed >= pre.sessionsTotal) {
+      return NextResponse.json({ error: "No sessions left on that prepaid credit" }, { status: 400 });
+    }
+    usePrepaymentId = pre.id;
+  }
+
   const appointment = await prisma.appointment.create({
     data: {
       clientId: client.id,
@@ -184,6 +197,7 @@ export async function POST(req: NextRequest) {
       source: source || "WEBSITE",
       notes,
       clientPackageId,
+      prepaymentId: usePrepaymentId,
     },
     include: { client: true, service: true, staff: true },
   });
@@ -194,6 +208,17 @@ export async function POST(req: NextRequest) {
       where: { id: clientPackageId },
       data: { sessionsUsed: { increment: 1 } },
     });
+  }
+
+  // …or from the prepaid deal, marking it finished once it runs out
+  if (usePrepaymentId) {
+    const pre = await prisma.prepayment.update({
+      where: { id: usePrepaymentId },
+      data: { sessionsUsed: { increment: 1 } },
+    });
+    if (pre.sessionsUsed >= pre.sessionsTotal) {
+      await prisma.prepayment.update({ where: { id: pre.id }, data: { usedAt: new Date() } });
+    }
   }
 
   // Send WhatsApp confirmation

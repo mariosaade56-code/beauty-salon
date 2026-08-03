@@ -21,6 +21,7 @@ interface Appointment {
   notes: string | null;
   serviceId: string;
   clientPackageId: string | null;
+  prepaymentId: string | null;
   paymentStatus: string | null;
   amountPaid: number | null;
   finalPrice: number | null;
@@ -50,6 +51,7 @@ function hourLabel(h: number) {
 function payTag(a: Appointment): string {
   if (a.status !== "COMPLETED") return "";
   if (a.clientPackageId) return "Package";
+  if (a.prepaymentId) return "Prepaid";
   if (a.paymentStatus === "PAID") return "Paid";
   if (a.paymentStatus === "PARTIAL") return `Partial $${a.amountPaid ?? 0}`;
   if (a.paymentStatus === "UNPAID") return "Unpaid";
@@ -258,7 +260,7 @@ export default function AppointmentsPage() {
 
   function startComplete(appt: Appointment) {
     // Package sessions, free services, or already-paid appointments just complete
-    if (appt.clientPackageId || !appt.service.price || appt.paymentStatus) {
+    if (appt.clientPackageId || appt.prepaymentId || !appt.service.price || appt.paymentStatus) {
       updateStatus(appt.id, "COMPLETED");
       return;
     }
@@ -278,7 +280,7 @@ export default function AppointmentsPage() {
   // Record a payment on its own, without changing the appointment's status —
   // e.g. the client pays today for Saturday. Works on any status.
   function startRecordPayment(appt: Appointment) {
-    if (appt.clientPackageId || !appt.service.price) return;
+    if (appt.clientPackageId || appt.prepaymentId || !appt.service.price) return;
     setPayIntent("record");
     setPayMode(appt.paymentStatus === "PARTIAL" || appt.paymentStatus === "UNPAID" ? appt.paymentStatus : "PAID");
     setPayAmount(appt.amountPaid != null ? String(appt.amountPaid) : "");
@@ -687,6 +689,7 @@ export default function AppointmentsPage() {
                 <Badge variant={statusColors[detail.status] || "outline"}>{detail.status}</Badge>
                 <Badge variant="outline">{detail.source}</Badge>
                 {detail.clientPackageId && <Badge variant="default">Package</Badge>}
+                {detail.prepaymentId && <Badge variant="default">Prepaid</Badge>}
                 <button onClick={() => startEditBooking(detail)}
                   className="ml-auto text-pink-600 text-sm font-medium hover:underline flex items-center gap-1">
                   <Pencil className="w-3.5 h-3.5" /> Change service
@@ -695,7 +698,11 @@ export default function AppointmentsPage() {
             </div>
 
             {/* Payment — recordable any time, even before the appointment or on a no-show */}
-            {detail.clientPackageId ? (
+            {detail.prepaymentId ? (
+              <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-600">
+                💳 Paid in advance — nothing to collect
+              </div>
+            ) : detail.clientPackageId ? (
               <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-600">
                 💳 Paid via package
               </div>

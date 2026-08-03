@@ -191,6 +191,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     });
   }
 
+  // Same for a session drawn from a one-off prepaid deal
+  if (
+    body.status === "CANCELLED" &&
+    existing?.prepaymentId &&
+    existing.status !== "CANCELLED"
+  ) {
+    await prisma.prepayment.update({
+      where: { id: existing.prepaymentId },
+      data: { sessionsUsed: { decrement: 1 }, usedAt: null },
+    });
+  }
+
   // Log the sale in the client's transaction history the first time a
   // payment is recorded — whether that happens at completion or in advance
   // (a client who pays today for Saturday). Independent of attendance, so a
@@ -201,6 +213,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     paymentJustRecorded &&
     appointment &&
     !appointment.clientPackageId &&
+    // A prepaid visit was already charged when the deal was recorded
+    !appointment.prepaymentId &&
     appointment.service.price
   ) {
     // What was actually agreed — a discount at the till, or the salon-wide
@@ -263,6 +277,12 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     await prisma.clientPackage.update({
       where: { id: existing.clientPackageId },
       data: { sessionsUsed: { decrement: 1 } },
+    });
+  }
+  if (existing.prepaymentId && existing.status !== "CANCELLED") {
+    await prisma.prepayment.update({
+      where: { id: existing.prepaymentId },
+      data: { sessionsUsed: { decrement: 1 }, usedAt: null },
     });
   }
 

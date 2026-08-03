@@ -37,6 +37,7 @@ const VISIT_FILTERS = [
 interface Prepaid {
   id: string; amount: number; paid: boolean; notes: string | null;
   description: string | null; createdAt: string; usedAt: string | null;
+  sessionsTotal: number; sessionsUsed: number;
   service: { id: string; name: string; duration: number } | null;
 }
 
@@ -66,6 +67,7 @@ export default function ClientDetailPage() {
   const [ppSearch, setPpSearch] = useState("");
   const [ppOther, setPpOther] = useState("");
   const [ppAmount, setPpAmount] = useState("");
+  const [ppSessions, setPpSessions] = useState("1");
   const [ppPaid, setPpPaid] = useState(true);
   const [ppNotes, setPpNotes] = useState("");
   const [savingPp, setSavingPp] = useState(false);
@@ -76,7 +78,8 @@ export default function ClientDetailPage() {
   }
 
   function resetPrepaidForm() {
-    setPpServiceId(""); setPpSearch(""); setPpOther(""); setPpAmount(""); setPpPaid(true); setPpNotes("");
+    setPpServiceId(""); setPpSearch(""); setPpOther(""); setPpAmount("");
+    setPpSessions("1"); setPpPaid(true); setPpNotes("");
   }
 
   async function addPrepaid(e: React.FormEvent) {
@@ -89,6 +92,7 @@ export default function ClientDetailPage() {
         serviceId: ppServiceId || null,
         description: ppServiceId ? null : ppOther,
         amount: ppAmount,
+        sessionsTotal: ppSessions,
         paid: ppPaid,
         notes: ppNotes,
       }),
@@ -487,16 +491,41 @@ export default function ClientDetailPage() {
                   )}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Amount ($) *</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">How many sessions? *</label>
+                      <input type="number" min={1} required
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-black"
+                        value={ppSessions} onChange={(e) => setPpSessions(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Total paid ($) *</label>
                       <input type="number" step="0.01" min={0} required
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-black"
                         value={ppAmount} onChange={(e) => setPpAmount(e.target.value)} />
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
-                      <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-black"
-                        placeholder="Optional" value={ppNotes} onChange={(e) => setPpNotes(e.target.value)} />
-                    </div>
+                  </div>
+                  {/* Makes a special deal obvious next to the usual price */}
+                  {(() => {
+                    const n = Math.max(parseInt(ppSessions) || 1, 1);
+                    const total = parseFloat(ppAmount) || 0;
+                    const listed = services.find((s) => s.id === ppServiceId)?.price ?? null;
+                    if (!total) return null;
+                    const normally = listed != null ? listed * n : null;
+                    return (
+                      <p className="text-xs text-gray-500">
+                        {n} × ${(total / n).toFixed(2)} each
+                        {normally != null && normally !== total && (
+                          <span className={normally > total ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
+                            {" "}· normally ${normally.toFixed(2)}
+                            {normally > total ? ` — saves $${(normally - total).toFixed(2)}` : ""}
+                          </span>
+                        )}
+                      </p>
+                    );
+                  })()}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
+                    <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-black"
+                      placeholder="Optional" value={ppNotes} onChange={(e) => setPpNotes(e.target.value)} />
                   </div>
                   <label className="flex items-center gap-2 text-sm text-gray-700">
                     <input type="checkbox" checked={ppPaid} onChange={(e) => setPpPaid(e.target.checked)} />
@@ -512,30 +541,45 @@ export default function ClientDetailPage() {
                 <p className="text-center text-gray-400 py-4 text-sm">Nothing paid in advance</p>
               ) : (
                 <div className="space-y-2">
-                  {prepaid.filter((pp) => !pp.usedAt).map((pp) => (
-                    <div key={pp.id} className="flex items-center justify-between gap-3 border border-amber-200 bg-amber-50 rounded-xl px-3 py-2.5">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-gray-900">
-                          {pp.service?.name || pp.description}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {format(new Date(pp.createdAt), "d MMMM, yyyy")}
-                          {pp.notes ? ` · ${pp.notes}` : ""}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <Badge variant={pp.paid ? "success" : "warning"}>
-                          ${pp.amount.toFixed(2)}{pp.paid ? "" : " unpaid"}
-                        </Badge>
-                        <Button size="sm" variant="outline" onClick={() => togglePrepaidUsed(pp)}>Done</Button>
-                        {isAdmin && (
-                          <button onClick={() => deletePrepaid(pp)} className="text-gray-300 hover:text-red-500">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                  {prepaid.filter((pp) => !pp.usedAt).map((pp) => {
+                    const left = Math.max(pp.sessionsTotal - pp.sessionsUsed, 0);
+                    return (
+                      <div key={pp.id} className="border border-amber-200 bg-amber-50 rounded-xl px-3 py-2.5">
+                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-gray-900">
+                              {pp.service?.name || pp.description}
+                              {pp.sessionsTotal > 1 && (
+                                <span className="text-gray-500 font-normal"> · {pp.sessionsTotal} sessions for ${pp.amount.toFixed(2)}</span>
+                              )}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {format(new Date(pp.createdAt), "d MMMM, yyyy")}
+                              {pp.notes ? ` · ${pp.notes}` : ""}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <Badge variant={left > 0 ? "success" : "outline"}>
+                              {left} of {pp.sessionsTotal} left
+                            </Badge>
+                            {!pp.paid && <Badge variant="warning">unpaid</Badge>}
+                            <Button size="sm" variant="outline" onClick={() => togglePrepaidUsed(pp)}>Done</Button>
+                            {isAdmin && (
+                              <button onClick={() => deletePrepaid(pp)} className="text-gray-300 hover:text-red-500">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        {pp.sessionsTotal > 1 && (
+                          <div className="w-full bg-white/70 rounded-full h-1.5 mt-2">
+                            <div className="bg-amber-500 h-1.5 rounded-full transition-all"
+                              style={{ width: `${(pp.sessionsUsed / pp.sessionsTotal) * 100}%` }} />
+                          </div>
                         )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 

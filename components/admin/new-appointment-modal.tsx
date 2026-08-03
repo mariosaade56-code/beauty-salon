@@ -49,6 +49,9 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
   const [suggestFor, setSuggestFor] = useState<"name" | "phone" | null>(null);
   const [linkedClient, setLinkedClient] = useState<ClientSuggestion | null>(null);
   const [todos, setTodos] = useState<{ id: string; description: string; fromService: string | null; createdAt: string }[]>([]);
+  // One-off deals already paid for on this client's file
+  const [credits, setCredits] = useState<{ id: string; amount: number; sessionsTotal: number; sessionsUsed: number; description: string | null; service: { id: string; name: string } | null }[]>([]);
+  const [useCreditId, setUseCreditId] = useState("");
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function searchClients(query: string, field: "name" | "phone") {
@@ -75,10 +78,16 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
   // Remind whoever is booking about anything this client left unfinished
   useEffect(() => {
     setTodos([]);
+    setCredits([]);
+    setUseCreditId("");
     if (!linkedClient) return;
     fetch(`/api/clients/${linkedClient.id}/pending`)
       .then((r) => (r.ok ? r.json() : []))
       .then((d) => setTodos(Array.isArray(d) ? d.filter((x) => !x.doneAt) : []))
+      .catch(() => {});
+    fetch(`/api/clients/${linkedClient.id}/prepaid`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d) => setCredits(Array.isArray(d) ? d.filter((x) => x.sessionsUsed < x.sessionsTotal) : []))
       .catch(() => {});
   }, [linkedClient]);
 
@@ -109,6 +118,13 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
     setPackageId("");
     setForm((f) => ({ ...f, time: "" }));
   }
+
+  // A prepaid deal covers one visit of one service, so only offer it on a
+  // straightforward single-service booking with no package involved.
+  const usableCredits =
+    !packageId && selectedServices.length === 1
+      ? credits.filter((c) => !c.service || c.service.id === selectedServices[0])
+      : [];
 
   useEffect(() => {
     fetch("/api/services").then((r) => r.json()).then(setServices);
@@ -200,7 +216,11 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
                 packagePaymentStatus: pkgPayMode,
                 packageAmountPaid: pkgPayMode === "PARTIAL" ? pkgPayAmount : undefined,
               }
-            : { ...base, serviceIds: selectedServices }
+            : {
+                ...base,
+                serviceIds: selectedServices,
+                prepaymentId: usableCredits.some((c) => c.id === useCreditId) ? useCreditId : undefined,
+              }
         ),
       });
       if (!res.ok) {
@@ -367,6 +387,39 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
               </>
             )}
           </div>
+          {/* Already paid for — offer to draw on it */}
+          {usableCredits.length > 0 && (
+            <div className="rounded-xl border-2 border-amber-300 bg-amber-50 px-3 py-2.5 space-y-1.5">
+              <p className="text-sm font-semibold text-amber-900">
+                {linkedClient?.name} already paid for this
+              </p>
+              {usableCredits.map((c) => {
+                const left = c.sessionsTotal - c.sessionsUsed;
+                const on = useCreditId === c.id;
+                return (
+                  <label key={c.id}
+                    className={`flex items-start gap-2.5 rounded-lg px-3 py-2 cursor-pointer bg-white border transition-colors ${on ? "border-amber-500" : "border-amber-200"}`}>
+                    <input type="checkbox" className="mt-0.5 accent-amber-600"
+                      checked={on}
+                      onChange={() => setUseCreditId(on ? "" : c.id)} />
+                    <span className="text-sm">
+                      <span className="block font-medium text-gray-900">
+                        {c.service?.name || c.description}
+                      </span>
+                      <span className="block text-xs text-gray-500">
+                        {left} of {c.sessionsTotal} left · paid ${c.amount.toFixed(2)}
+                        {on ? " — this booking uses one" : ""}
+                      </span>
+                    </span>
+                  </label>
+                );
+              })}
+              <p className="text-xs text-amber-800">
+                Tick it and this visit is free at the till — the money was already taken.
+              </p>
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Package</label>
             <Select value={packageId}
