@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns";
 import { Calendar, DollarSign, TrendingUp, Clock } from "lucide-react";
 import PaymentBadge from "@/components/payment-badge";
+import { birthdayLink, DEFAULT_BIRTHDAY_MESSAGE, BIRTHDAY_MESSAGE_KEY, COUNTRY_CODE_KEY } from "@/lib/messaging";
 
 interface Appointment {
   id: string;
@@ -27,6 +28,13 @@ interface ProductSale {
   paid: boolean;
 }
 
+interface Birthday {
+  id: string;
+  name: string;
+  phone: string;
+  turning: number | null;
+}
+
 const statusColors: Record<string, "default" | "success" | "warning" | "destructive" | "outline"> = {
   CONFIRMED: "success",
   PENDING: "warning",
@@ -41,12 +49,43 @@ export default function DashboardPage() {
   const [to, setTo] = useState(todayStr);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [sales, setSales] = useState<ProductSale[]>([]);
+  const [birthdays, setBirthdays] = useState<Birthday[]>([]);
+  const [greeted, setGreeted] = useState<string[]>([]);
+  const [msgTemplate, setMsgTemplate] = useState(DEFAULT_BIRTHDAY_MESSAGE);
+  const [countryCode, setCountryCode] = useState("961");
   const [role, setRole] = useState<string>("ADMIN");
   const [todos, setTodos] = useState<{ id: string; description: string; fromService: string | null; createdAt: string; client: { id: string; name: string } }[]>([]);
 
   useEffect(() => {
     fetch("/api/pending").then((r) => (r.ok ? r.json() : [])).then((d) => setTodos(Array.isArray(d) ? d : [])).catch(() => {});
+    // Today's birthdays, regardless of which period the stats are showing
+    fetch("/api/clients/birthdays")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d) => setBirthdays(Array.isArray(d) ? d : []))
+      .catch(() => {});
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((s) => {
+        if (s?.[BIRTHDAY_MESSAGE_KEY]) setMsgTemplate(s[BIRTHDAY_MESSAGE_KEY]);
+        if (s?.[COUNTRY_CODE_KEY]) setCountryCode(s[COUNTRY_CODE_KEY]);
+      })
+      .catch(() => {});
+    // Remembers who's been wished today, so the list doesn't nag
+    try {
+      const raw = localStorage.getItem(`greeted:${format(new Date(), "yyyy-MM-dd")}`);
+      if (raw) setGreeted(JSON.parse(raw));
+    } catch { /* private mode — just show everyone */ }
   }, []);
+
+  function markGreeted(id: string) {
+    setGreeted((prev) => {
+      const next = prev.includes(id) ? prev : [...prev, id];
+      try {
+        localStorage.setItem(`greeted:${format(new Date(), "yyyy-MM-dd")}`, JSON.stringify(next));
+      } catch { /* ignore */ }
+      return next;
+    });
+  }
 
   useEffect(() => {
     fetch("/api/auth/me").then((r) => r.json()).then((u) => {
@@ -132,6 +171,51 @@ export default function DashboardPage() {
               : undefined} />
         )}
       </div>
+
+      {/* Birthdays today */}
+      {birthdays.length > 0 && (
+        <Card className="border-pink-300">
+          <CardHeader>
+            <CardTitle className="text-pink-800">
+              🎂 Birthday today ({birthdays.length})
+            </CardTitle>
+            <p className="text-sm text-gray-500">Tap to send them a message on WhatsApp</p>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {birthdays.map((b) => {
+                const done = greeted.includes(b.id);
+                return (
+                  <div key={b.id}
+                    className={`flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 border ${done ? "border-gray-200 bg-gray-50" : "border-pink-200 bg-pink-50"}`}>
+                    <div className="min-w-0">
+                      <p className={`text-sm font-medium ${done ? "text-gray-500" : "text-gray-900"}`}>
+                        {b.name}
+                        {b.turning && b.turning > 0 && b.turning < 120 && (
+                          <span className="font-normal text-gray-500"> · turning {b.turning}</span>
+                        )}
+                      </p>
+                      <p className="text-xs text-gray-500">{b.phone}</p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {done && <Badge variant="success">Sent</Badge>}
+                      <a
+                        href={birthdayLink(b.phone, b.name, msgTemplate, countryCode)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => markGreeted(b.id)}
+                        className={`text-sm font-medium rounded-lg px-3 py-1.5 transition-colors ${done ? "text-gray-600 border border-gray-200 hover:bg-gray-100" : "bg-green-600 text-white hover:bg-green-700"}`}
+                      >
+                        {done ? "Send again" : "Send wishes"}
+                      </a>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Clients with unfinished work */}
       {todos.length > 0 && (

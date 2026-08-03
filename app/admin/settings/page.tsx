@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DEFAULT_BIRTHDAY_MESSAGE } from "@/lib/messaging";
 
 interface Settings {
   salon_name?: string;
@@ -15,6 +16,8 @@ interface Settings {
   tiktok_url?: string;
   google_reviews_url?: string;
   service_discount_percent?: string;
+  birthday_message?: string;
+  whatsapp_country_code?: string;
 }
 
 function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
@@ -102,6 +105,36 @@ export default function SettingsPage() {
           })()}
           <p className="text-xs text-gray-400">
             Packages and products are priced separately — this only affects services.
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Birthday wishes */}
+      <Card>
+        <CardHeader><CardTitle>Birthday Message</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              What to send <span className="font-normal text-gray-400">— write {"{name}"} where the client&apos;s name should go</span>
+            </label>
+            <textarea
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-black min-h-[80px]"
+              value={settings.birthday_message ?? DEFAULT_BIRTHDAY_MESSAGE}
+              onChange={(e) => set("birthday_message", e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Country code for WhatsApp</label>
+            <Input value={settings.whatsapp_country_code ?? "961"}
+              onChange={(e) => set("whatsapp_country_code", e.target.value.replace(/\D/g, ""))}
+              placeholder="961" className="max-w-[120px]" />
+            <p className="text-xs text-gray-400 mt-1">
+              Added to numbers saved without one — 961 is Lebanon.
+            </p>
+          </div>
+          <p className="text-xs text-gray-500">
+            Clients with a birthday today appear on the Dashboard. Pressing Send wishes opens
+            WhatsApp with this message ready — you still tap send yourself.
           </p>
         </CardContent>
       </Card>
