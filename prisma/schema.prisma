@@ -206,6 +206,9 @@ model Package {
   price          Float
   validityDays   Int             @default(365)
   isActive       Boolean         @default(true)
+  // Off means the salon can still sell it at the desk, but customers
+  // never see it on the public booking page.
+  showOnWebsite  Boolean         @default(true)
   clientPackages ClientPackage[]
   createdAt      DateTime        @default(now())
 }

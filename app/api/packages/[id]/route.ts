@@ -14,6 +14,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (body.price != null) data.price = Number(body.price);
   if (body.validityDays != null) data.validityDays = Number(body.validityDays);
   if (typeof body.isActive === "boolean") data.isActive = body.isActive;
+  if (typeof body.showOnWebsite === "boolean") data.showOnWebsite = body.showOnWebsite;
 
   // Replace the covered services when a new list is given
   if (Array.isArray(body.serviceIds) && body.serviceIds.length) {

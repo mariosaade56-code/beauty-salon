@@ -10,7 +10,8 @@ export async function GET(req: Request) {
   // ?public=1 forces this view even when an admin is logged in.
   if (!user || searchParams.get("public")) {
     const packages = await prisma.package.findMany({
-      where: { isActive: true },
+      // In-store-only packages stay off the public booking page
+      where: { isActive: true, showOnWebsite: true },
       select: {
         id: true,
         name: true,
@@ -58,6 +59,7 @@ export async function POST(req: Request) {
       sessionCount: body.sessionCount,
       price: body.price,
       validityDays: body.validityDays ?? 365,
+      showOnWebsite: body.showOnWebsite !== false,
     },
     include: { service: { select: { name: true } }, services: { select: { id: true, name: true } } },
   });

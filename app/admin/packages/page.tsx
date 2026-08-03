@@ -15,13 +15,13 @@ interface Buyer {
 }
 interface Pkg {
   id: string; name: string; sessionCount: number; price: number;
-  validityDays: number; isActive: boolean;
+  validityDays: number; isActive: boolean; showOnWebsite: boolean;
   service: { name: string; category: string };
   services?: { id: string; name: string }[];
   clientPackages: Buyer[];
 }
 
-const blank = { name: "", serviceIds: [] as string[], sessionCount: 4, price: "", validityDays: 365 };
+const blank = { name: "", serviceIds: [] as string[], sessionCount: 4, price: "", validityDays: 365, showOnWebsite: true };
 
 export default function PackagesPage() {
   const router = useRouter();
@@ -71,12 +71,21 @@ export default function PackagesPage() {
       sessionCount: p.sessionCount,
       price: p.price.toString(),
       validityDays: p.validityDays,
+      showOnWebsite: p.showOnWebsite,
     });
     setEditId(p.id); setShowForm(true);
   }
 
   async function toggleActive(p: Pkg) {
     await fetch(`/api/packages/${p.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isActive: !p.isActive }) });
+    load();
+  }
+
+  async function toggleWebsite(p: Pkg) {
+    await fetch(`/api/packages/${p.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ showOnWebsite: !p.showOnWebsite }),
+    });
     load();
   }
 
@@ -140,6 +149,28 @@ export default function PackagesPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Validity (days)</label>
                 <Input type="number" value={form.validityDays} onChange={(e) => setForm({ ...form, validityDays: parseInt(e.target.value) })} />
               </div>
+
+              {/* Where clients can get it */}
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Where is it offered?</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {([
+                    { on: true, title: "Website + in store", note: "Clients can book it themselves online" },
+                    { on: false, title: "In store only", note: "Hidden from the website — you sell it at the salon" },
+                  ] as const).map((opt) => (
+                    <label key={String(opt.on)}
+                      className={`flex items-start gap-2.5 border rounded-xl px-4 py-3 cursor-pointer transition-colors ${form.showOnWebsite === opt.on ? "border-pink-600 bg-pink-50" : "border-gray-200 hover:border-gray-300"}`}>
+                      <input type="radio" name="whereoffered" className="mt-0.5"
+                        checked={form.showOnWebsite === opt.on}
+                        onChange={() => setForm({ ...form, showOnWebsite: opt.on })} />
+                      <span>
+                        <span className="block text-sm font-medium text-gray-900">{opt.title}</span>
+                        <span className="block text-xs text-gray-500">{opt.note}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
               <div className="md:col-span-2">
                 <Button type="submit">{editId ? "Update Package" : "Create Package"}</Button>
               </div>
@@ -172,6 +203,12 @@ export default function PackagesPage() {
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <Badge variant={p.isActive ? "success" : "outline"}>{p.isActive ? "Active" : "Off"}</Badge>
+                  <button onClick={() => toggleWebsite(p)}
+                    title={p.showOnWebsite ? "On the website — click to make it in-store only" : "In store only — click to put it on the website"}>
+                    <Badge variant={p.showOnWebsite ? "default" : "outline"}>
+                      {p.showOnWebsite ? "🌐 Website" : "🏠 In store only"}
+                    </Badge>
+                  </button>
                   <Button size="sm" variant="ghost" onClick={() => startEdit(p)}><Pencil className="w-4 h-4" /></Button>
                   <Button size="sm" variant="ghost" onClick={() => toggleActive(p)}>{p.isActive ? "Hide" : "Show"}</Button>
                 </div>
