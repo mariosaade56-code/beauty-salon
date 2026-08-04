@@ -47,6 +47,19 @@ function visitBucket(v: Visit): string {
   return KNOWN_BUCKETS.includes(cat) ? cat : "other";
 }
 
+// A booking only becomes a session once someone says what happened.
+// Anything still ahead of that is just an upcoming appointment.
+const RESOLVED = ["COMPLETED", "NO_SHOW", "CANCELLED"];
+const isResolved = (v: Visit) => RESOLVED.includes(v.status);
+
+const STATUS_FILTERS = [
+  { key: "all", label: "All" },
+  { key: "COMPLETED", label: "Done" },
+  { key: "NO_SHOW", label: "No-show" },
+  { key: "CANCELLED", label: "Cancelled" },
+  { key: "upcoming", label: "Upcoming" },
+] as const;
+
 
 export default function ClientDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -59,6 +72,7 @@ export default function ClientDetailPage() {
   const [tab, setTab] = useState<"record" | "visits" | "packages" | "photos">("record");
   const [visits, setVisits] = useState<Visit[]>([]);
   const [visitFilter, setVisitFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
   // Paid for, not booked yet
   const [prepaid, setPrepaid] = useState<Prepaid[]>([]);
   const [services, setServices] = useState<{ id: string; name: string; price: number | null }[]>([]);
@@ -208,7 +222,21 @@ export default function ClientDetailPage() {
     setTransactions(Array.isArray(txs) ? txs : []);
   }
 
-  const filteredVisits = visitFilter === "all" ? visits : visits.filter((v) => visitBucket(v) === visitFilter);
+  // Sessions are the resolved visits; upcoming bookings sit behind their own chip
+  const sessions = visits.filter(isResolved);
+  const upcoming = visits.filter((v) => !isResolved(v));
+  const statusPool =
+    statusFilter === "all" ? sessions
+      : statusFilter === "upcoming" ? upcoming
+      : sessions.filter((v) => v.status === statusFilter);
+  const filteredVisits =
+    visitFilter === "all" ? statusPool : statusPool.filter((v) => visitBucket(v) === visitFilter);
+
+  function statusCount(key: string) {
+    if (key === "all") return sessions.length;
+    if (key === "upcoming") return upcoming.length;
+    return sessions.filter((v) => v.status === key).length;
+  }
 
   async function saveProfile(e: React.FormEvent) {
     e.preventDefault();
@@ -392,7 +420,7 @@ export default function ClientDetailPage() {
           <button key={t}
             onClick={() => setTab(t)}
             className={`px-4 py-2 text-sm font-medium capitalize border-b-2 transition-colors whitespace-nowrap ${tab === t ? "border-pink-600 text-pink-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
-            {t === "record" ? "📋 Record" : t === "visits" ? `💉 Sessions (${visits.length})` : t === "packages" ? "📦 Packages" : "📸 Photos"}
+            {t === "record" ? "📋 Record" : t === "visits" ? `💉 Sessions (${sessions.length})` : t === "packages" ? "📦 Packages" : "📸 Photos"}
           </button>
         ))}
       </div>
@@ -691,14 +719,34 @@ export default function ClientDetailPage() {
       {/* Sessions tab — every visit, filtered by service type */}
       {tab === "visits" && (
         <div className="space-y-4">
+          {/* What happened */}
+          <div className="flex flex-wrap gap-2">
+            {STATUS_FILTERS.map((f) => {
+              const count = statusCount(f.key);
+              const on = statusFilter === f.key;
+              const isUpcoming = f.key === "upcoming";
+              return (
+                <button key={f.key} onClick={() => setStatusFilter(f.key)}
+                  className={`px-3.5 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                    on
+                      ? isUpcoming ? "bg-gray-700 border-gray-700 text-white" : "bg-pink-600 border-pink-600 text-white"
+                      : "bg-white border-gray-200 text-gray-600 hover:border-pink-300"
+                  }`}>
+                  {f.label} <span className={on ? "text-white/70" : "text-gray-400"}>({count})</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Which treatment */}
           <div className="flex flex-wrap gap-2">
             {VISIT_FILTERS.map((f) => {
-              const count = f.key === "all" ? visits.length : visits.filter((v) => visitBucket(v) === f.key).length;
+              const count = f.key === "all" ? statusPool.length : statusPool.filter((v) => visitBucket(v) === f.key).length;
               const on = visitFilter === f.key;
               return (
                 <button key={f.key} onClick={() => setVisitFilter(f.key)}
-                  className={`px-3.5 py-1.5 rounded-full text-sm font-medium border transition-colors ${on ? "bg-pink-600 border-pink-600 text-white" : "bg-white border-gray-200 text-gray-600 hover:border-pink-300"}`}>
-                  {f.label} <span className={on ? "text-pink-100" : "text-gray-400"}>({count})</span>
+                  className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${on ? "bg-gray-900 border-gray-900 text-white" : "bg-white border-gray-200 text-gray-500 hover:border-gray-400"}`}>
+                  {f.label} <span className={on ? "text-white/70" : "text-gray-400"}>({count})</span>
                 </button>
               );
             })}
@@ -708,11 +756,11 @@ export default function ClientDetailPage() {
           {filteredVisits.length > 0 && (
             <div className="grid grid-cols-3 gap-3">
               <Card><CardContent className="p-4">
-                <p className="text-xs text-gray-500">Sessions</p>
+                <p className="text-xs text-gray-500">{statusFilter === "upcoming" ? "Booked" : "Sessions"}</p>
                 <p className="text-xl font-bold text-gray-900">{filteredVisits.length}</p>
               </CardContent></Card>
               <Card><CardContent className="p-4">
-                <p className="text-xs text-gray-500">Completed</p>
+                <p className="text-xs text-gray-500">Done</p>
                 <p className="text-xl font-bold text-green-600">{filteredVisits.filter((v) => v.status === "COMPLETED").length}</p>
               </CardContent></Card>
               <Card><CardContent className="p-4">
@@ -726,7 +774,13 @@ export default function ClientDetailPage() {
 
           {filteredVisits.length === 0 ? (
             <Card><CardContent className="py-10 text-center text-gray-400 text-sm">
-              {visits.length === 0 ? "No sessions yet" : "No sessions of this type"}
+              {visits.length === 0
+                ? "No sessions yet"
+                : statusFilter === "upcoming"
+                ? "Nothing booked ahead"
+                : sessions.length === 0
+                ? `Nothing counted yet — ${upcoming.length} booking${upcoming.length === 1 ? "" : "s"} still to happen`
+                : "Nothing matches these filters"}
             </CardContent></Card>
           ) : (
             <div className="space-y-2">
