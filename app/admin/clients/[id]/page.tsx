@@ -77,7 +77,8 @@ export default function ClientDetailPage() {
   const [prepaid, setPrepaid] = useState<Prepaid[]>([]);
   const [services, setServices] = useState<{ id: string; name: string; price: number | null }[]>([]);
   const [showPrepaidForm, setShowPrepaidForm] = useState(false);
-  const [ppServiceId, setPpServiceId] = useState("");
+  // serviceId -> { sessions, amount } for everything ticked
+  const [ppPicked, setPpPicked] = useState<Record<string, { sessions: string; amount: string }>>({});
   const [ppSearch, setPpSearch] = useState("");
   const [ppOther, setPpOther] = useState("");
   const [ppAmount, setPpAmount] = useState("");
@@ -92,24 +93,63 @@ export default function ClientDetailPage() {
   }
 
   function resetPrepaidForm() {
-    setPpServiceId(""); setPpSearch(""); setPpOther(""); setPpAmount("");
+    setPpPicked({}); setPpSearch(""); setPpOther(""); setPpAmount("");
     setPpSessions("1"); setPpPaid(true); setPpNotes("");
   }
+
+  function togglePpService(sv: { id: string; price: number | null }) {
+    setPpPicked((prev) => {
+      const next = { ...prev };
+      if (next[sv.id]) delete next[sv.id];
+      else next[sv.id] = { sessions: "1", amount: sv.price != null ? String(sv.price) : "" };
+      return next;
+    });
+  }
+
+  function setPpField(id: string, field: "sessions" | "amount", value: string) {
+    setPpPicked((prev) => {
+      const row = prev[id];
+      if (!row) return prev;
+      const next = { ...prev, [id]: { ...row, [field]: value } };
+      // Keep the price in step with the session count
+      if (field === "sessions") {
+        const unit = services.find((s) => s.id === id)?.price;
+        const n = Math.max(parseInt(value) || 1, 1);
+        if (unit != null) next[id].amount = String(unit * n);
+      }
+      return next;
+    });
+  }
+
+  const ppTotal = Object.values(ppPicked).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
+    + (Object.keys(ppPicked).length === 0 ? parseFloat(ppAmount) || 0 : 0);
 
   async function addPrepaid(e: React.FormEvent) {
     e.preventDefault();
     setSavingPp(true);
+    const picked = Object.entries(ppPicked);
+    const payload = picked.length
+      ? {
+          items: picked.map(([serviceId, row]) => ({
+            serviceId,
+            sessionsTotal: row.sessions,
+            amount: row.amount,
+          })),
+          paid: ppPaid,
+          notes: ppNotes,
+        }
+      : {
+          serviceId: null,
+          description: ppOther,
+          amount: ppAmount,
+          sessionsTotal: ppSessions,
+          paid: ppPaid,
+          notes: ppNotes,
+        };
     const res = await fetch(`/api/clients/${id}/prepaid`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        serviceId: ppServiceId || null,
-        description: ppServiceId ? null : ppOther,
-        amount: ppAmount,
-        sessionsTotal: ppSessions,
-        paid: ppPaid,
-        notes: ppNotes,
-      }),
+      body: JSON.stringify(payload),
     }).catch(() => null);
     setSavingPp(false);
     if (!res || !res.ok) {
@@ -482,84 +522,123 @@ export default function ClientDetailPage() {
               {showPrepaidForm && (
                 <form onSubmit={addPrepaid} className="space-y-3 border border-gray-200 rounded-xl p-3 bg-gray-50">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">What did they pay for?</label>
-                    <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-black mb-1.5"
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      What did they pay for? <span className="font-normal text-gray-400">(tick as many as you need)</span>
+                    </label>
+                    <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 mb-1.5"
                       placeholder="Search services… e.g. ce for Cellulite"
-                      value={ppSearch} onChange={(e) => { setPpSearch(e.target.value); setPpServiceId(""); }} />
+                      value={ppSearch} onChange={(e) => setPpSearch(e.target.value)} />
                     <div className="border border-gray-200 rounded-lg max-h-36 overflow-y-auto divide-y divide-gray-100 bg-white">
                       {(() => {
                         const q = ppSearch.trim().toLowerCase();
                         const shown = q
-                          ? services.filter((s) => s.name.toLowerCase().includes(q) || s.id === ppServiceId)
+                          ? services.filter((sv) => sv.name.toLowerCase().includes(q) || ppPicked[sv.id])
                           : services;
                         if (shown.length === 0) {
                           return <p className="px-3 py-3 text-sm text-gray-400 text-center">No service matches — use &quot;something else&quot; below</p>;
                         }
-                        return shown.map((s) => {
-                          const on = ppServiceId === s.id;
+                        return shown.map((sv) => {
+                          const on = !!ppPicked[sv.id];
                           return (
-                            <button key={s.id} type="button"
-                              onClick={() => { setPpServiceId(s.id); setPpOther(""); if (s.price && !ppAmount) setPpAmount(String(s.price)); }}
+                            <button key={sv.id} type="button" onClick={() => togglePpService(sv)}
                               className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between ${on ? "bg-pink-50 text-pink-800" : "hover:bg-gray-50 text-gray-800"}`}>
-                              <span>{on ? "✓ " : ""}{s.name}</span>
-                              {s.price ? <span className="text-xs text-gray-400">${s.price}</span> : null}
+                              <span>{on ? "\u2713 " : ""}{sv.name}</span>
+                              {sv.price != null ? <span className="text-xs text-gray-400">${sv.price}</span> : null}
                             </button>
                           );
                         });
                       })()}
                     </div>
                   </div>
-                  {!ppServiceId && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">…or something else</label>
-                      <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-black"
-                        placeholder="e.g. Bridal package, gift voucher"
-                        value={ppOther} onChange={(e) => setPpOther(e.target.value)} />
+
+                  {/* One row per ticked service, each with its own deal */}
+                  {Object.keys(ppPicked).length > 0 && (
+                    <div className="space-y-2">
+                      {Object.entries(ppPicked).map(([sid, row]) => {
+                        const sv = services.find((x) => x.id === sid);
+                        const n = Math.max(parseInt(row.sessions) || 1, 1);
+                        const normally = sv?.price != null ? sv.price * n : null;
+                        const total = parseFloat(row.amount) || 0;
+                        return (
+                          <div key={sid} className="border border-gray-200 rounded-lg px-3 py-2.5 bg-white">
+                            <div className="flex items-center justify-between gap-2 mb-2">
+                              <p className="text-sm font-medium text-gray-900 truncate">{sv?.name}</p>
+                              <button type="button" onClick={() => togglePpService({ id: sid, price: sv?.price ?? null })}
+                                className="text-gray-300 hover:text-red-500 flex-shrink-0">
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="block text-xs text-gray-500 mb-1">Sessions</label>
+                                <input type="number" min={1} required
+                                  className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-gray-900"
+                                  value={row.sessions} onChange={(e) => setPpField(sid, "sessions", e.target.value)} />
+                              </div>
+                              <div>
+                                <label className="block text-xs text-gray-500 mb-1">Paid ($)</label>
+                                <input type="number" step="0.01" min={0} required
+                                  className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-gray-900"
+                                  value={row.amount} onChange={(e) => setPpField(sid, "amount", e.target.value)} />
+                              </div>
+                            </div>
+                            {total > 0 && normally != null && normally !== total && (
+                              <p className="text-xs mt-1.5">
+                                <span className="text-gray-500">{n} \u00d7 ${(total / n).toFixed(2)} each · </span>
+                                <span className={normally > total ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
+                                  normally ${normally.toFixed(2)}
+                                  {normally > total ? ` — saves $${(normally - total).toFixed(2)}` : ""}
+                                </span>
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                      <div className="flex justify-between text-sm border-t border-gray-200 pt-2">
+                        <span className="text-gray-600">
+                          {Object.keys(ppPicked).length} service{Object.keys(ppPicked).length > 1 ? "s" : ""}
+                        </span>
+                        <span className="font-semibold text-gray-900">Total ${ppTotal.toFixed(2)}</span>
+                      </div>
                     </div>
                   )}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">How many sessions? *</label>
-                      <input type="number" min={1} required
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-black"
-                        value={ppSessions} onChange={(e) => setPpSessions(e.target.value)} />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Total paid ($) *</label>
-                      <input type="number" step="0.01" min={0} required
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-black"
-                        value={ppAmount} onChange={(e) => setPpAmount(e.target.value)} />
-                    </div>
-                  </div>
-                  {/* Makes a special deal obvious next to the usual price */}
-                  {(() => {
-                    const n = Math.max(parseInt(ppSessions) || 1, 1);
-                    const total = parseFloat(ppAmount) || 0;
-                    const listed = services.find((s) => s.id === ppServiceId)?.price ?? null;
-                    if (!total) return null;
-                    const normally = listed != null ? listed * n : null;
-                    return (
-                      <p className="text-xs text-gray-500">
-                        {n} × ${(total / n).toFixed(2)} each
-                        {normally != null && normally !== total && (
-                          <span className={normally > total ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
-                            {" "}· normally ${normally.toFixed(2)}
-                            {normally > total ? ` — saves $${(normally - total).toFixed(2)}` : ""}
-                          </span>
-                        )}
-                      </p>
-                    );
-                  })()}
+
+                  {/* Anything not on the service list */}
+                  {Object.keys(ppPicked).length === 0 && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">…or something else</label>
+                        <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900"
+                          placeholder="e.g. Bridal package, gift voucher"
+                          value={ppOther} onChange={(e) => setPpOther(e.target.value)} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">How many sessions? *</label>
+                          <input type="number" min={1} required
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900"
+                            value={ppSessions} onChange={(e) => setPpSessions(e.target.value)} />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Total paid ($) *</label>
+                          <input type="number" step="0.01" min={0} required
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900"
+                            value={ppAmount} onChange={(e) => setPpAmount(e.target.value)} />
+                        </div>
+                      </div>
+                    </>
+                  )}
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
-                    <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-black"
+                    <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900"
                       placeholder="Optional" value={ppNotes} onChange={(e) => setPpNotes(e.target.value)} />
                   </div>
                   <label className="flex items-center gap-2 text-sm text-gray-700">
                     <input type="checkbox" checked={ppPaid} onChange={(e) => setPpPaid(e.target.checked)} />
                     Money received
                   </label>
-                  <Button type="submit" size="sm" disabled={savingPp || (!ppServiceId && !ppOther.trim())}>
+                  <Button type="submit" size="sm" disabled={savingPp || (Object.keys(ppPicked).length === 0 && !ppOther.trim())}>
                     {savingPp ? "Saving…" : "Save"}
                   </Button>
                 </form>
