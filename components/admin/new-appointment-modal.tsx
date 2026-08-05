@@ -114,17 +114,35 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
   const totalPrice = applyDiscount(fullPrice, discount);
 
   function toggleService(id: string) {
-    setSelectedServices((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    setSelectedServices((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+      // A prepaid session pays for one service — changing the picks drops it
+      setUseCreditId((cur) => {
+        if (!cur) return cur;
+        const c = credits.find((x) => x.id === cur);
+        return c && next.length === 1 && c.service?.id === next[0] ? cur : "";
+      });
+      return next;
+    });
     setPackageId("");
     setForm((f) => ({ ...f, time: "" }));
   }
 
-  // A prepaid deal covers one visit of one service, so only offer it on a
-  // straightforward single-service booking with no package involved.
-  const usableCredits =
-    !packageId && selectedServices.length === 1
-      ? credits.filter((c) => !c.service || c.service.id === selectedServices[0])
-      : [];
+  // Everything this client has already paid for and not yet used. Shown as
+  // soon as they're recognised, so nobody charges them twice by accident.
+  const usableCredits = packageId ? [] : credits;
+
+  // Ticking one books that service against the credit. A prepaid session
+  // covers a single visit, so it replaces whatever else was selected.
+  function useCredit(c: { id: string; service: { id: string; name: string } | null }) {
+    if (useCreditId === c.id) {
+      setUseCreditId("");
+      return;
+    }
+    setUseCreditId(c.id);
+    if (c.service) setSelectedServices([c.service.id]);
+    setForm((f) => ({ ...f, time: "" }));
+  }
 
   useEffect(() => {
     fetch("/api/services").then((r) => r.json()).then(setServices);
@@ -312,6 +330,38 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
             <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
             <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           </div>
+          {/* Already paid for — surfaced the moment the client is recognised */}
+          {usableCredits.length > 0 && (
+            <div className="rounded-xl border-2 border-amber-300 bg-amber-50 px-3 py-2.5 space-y-1.5">
+              <p className="text-sm font-semibold text-amber-900">
+                ⚠ {linkedClient?.name} has already paid for {usableCredits.length === 1 ? "this" : "these"}
+              </p>
+              {usableCredits.map((c) => {
+                const left = c.sessionsTotal - c.sessionsUsed;
+                const on = useCreditId === c.id;
+                return (
+                  <label key={c.id}
+                    className={`flex items-start gap-2.5 rounded-lg px-3 py-2 cursor-pointer bg-white border transition-colors ${on ? "border-amber-500" : "border-amber-200"}`}>
+                    <input type="checkbox" className="mt-0.5 accent-amber-600"
+                      checked={on} onChange={() => useCredit(c)} />
+                    <span className="text-sm">
+                      <span className="block font-medium text-gray-900">
+                        {c.service?.name || c.description}
+                      </span>
+                      <span className="block text-xs text-gray-500">
+                        {left} of {c.sessionsTotal} left · paid ${c.amount.toFixed(2)}
+                        {on ? " — this booking uses one" : ""}
+                      </span>
+                    </span>
+                  </label>
+                );
+              })}
+              <p className="text-xs text-amber-800">
+                Tick one and it fills in the service below — the visit is free at the till.
+              </p>
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Services {!packageId && "*"}{" "}
@@ -387,39 +437,6 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
               </>
             )}
           </div>
-          {/* Already paid for — offer to draw on it */}
-          {usableCredits.length > 0 && (
-            <div className="rounded-xl border-2 border-amber-300 bg-amber-50 px-3 py-2.5 space-y-1.5">
-              <p className="text-sm font-semibold text-amber-900">
-                {linkedClient?.name} already paid for this
-              </p>
-              {usableCredits.map((c) => {
-                const left = c.sessionsTotal - c.sessionsUsed;
-                const on = useCreditId === c.id;
-                return (
-                  <label key={c.id}
-                    className={`flex items-start gap-2.5 rounded-lg px-3 py-2 cursor-pointer bg-white border transition-colors ${on ? "border-amber-500" : "border-amber-200"}`}>
-                    <input type="checkbox" className="mt-0.5 accent-amber-600"
-                      checked={on}
-                      onChange={() => setUseCreditId(on ? "" : c.id)} />
-                    <span className="text-sm">
-                      <span className="block font-medium text-gray-900">
-                        {c.service?.name || c.description}
-                      </span>
-                      <span className="block text-xs text-gray-500">
-                        {left} of {c.sessionsTotal} left · paid ${c.amount.toFixed(2)}
-                        {on ? " — this booking uses one" : ""}
-                      </span>
-                    </span>
-                  </label>
-                );
-              })}
-              <p className="text-xs text-amber-800">
-                Tick it and this visit is free at the till — the money was already taken.
-              </p>
-            </div>
-          )}
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Package</label>
             <Select value={packageId}
