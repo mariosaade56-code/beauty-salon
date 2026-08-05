@@ -18,7 +18,13 @@ interface Appointment {
   status: string;
   paymentStatus: string | null;
   amountPaid: number | null;
+  prepaymentId: string | null;
   service: { price: number | null };
+}
+
+interface Prepaid {
+  amount: number;
+  paid: boolean;
 }
 
 interface ProductSale {
@@ -40,25 +46,32 @@ export default function AccountingPage() {
   const [serviceRevenue, setServiceRevenue] = useState(0);
   const [productRevenue, setProductRevenue] = useState(0);
   const [productCount, setProductCount] = useState(0);
-  const revenue = serviceRevenue + productRevenue;
+  const [prepaidRevenue, setPrepaidRevenue] = useState(0);
+  const revenue = serviceRevenue + productRevenue + prepaidRevenue;
   const [form, setForm] = useState({ date: format(now, "yyyy-MM-dd"), category: "", description: "", amount: "" });
   const [formError, setFormError] = useState("");
 
   const load = useCallback(async () => {
     if (!from || !to) return;
     const [a, b] = from <= to ? [from, to] : [to, from];
-    const [exp, appts, sales] = await Promise.all([
+    const [exp, appts, sales, pre] = await Promise.all([
       fetch(`/api/expenses?from=${a}&to=${b}`).then((r) => (r.ok ? r.json() : [])),
       fetch(`/api/appointments?from=${a}&to=${b}`).then((r) => (r.ok ? r.json() : [])),
       fetch(`/api/product-sales?from=${a}&to=${b}`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
+      fetch(`/api/prepaid?from=${a}&to=${b}`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
     ]);
     setExpenses(Array.isArray(exp) ? exp : []);
     const completed = (Array.isArray(appts) ? appts : []).filter((x: Appointment) => x.status === "COMPLETED");
+    // A prepaid visit is skipped — its money was counted when it was paid for
     setServiceRevenue(
       completed.reduce(
-        (sum: number, x: Appointment) => sum + (x.paymentStatus ? (x.amountPaid ?? 0) : (x.service.price || 0)),
+        (sum: number, x: Appointment) =>
+          sum + (x.prepaymentId ? 0 : x.paymentStatus ? (x.amountPaid ?? 0) : (x.service.price || 0)),
         0
       )
+    );
+    setPrepaidRevenue(
+      (Array.isArray(pre) ? pre : []).filter((x: Prepaid) => x.paid).reduce((s: number, x: Prepaid) => s + x.amount, 0)
     );
     // Only money actually collected counts, same rule as services
     const paidSales = (Array.isArray(sales) ? sales : []).filter((s: ProductSale) => s.paid);
@@ -138,9 +151,13 @@ export default function AccountingPage() {
               <div>
                 <p className="text-sm text-gray-500">Revenue (collected)</p>
                 <p className="text-2xl font-bold text-gray-900 mt-1">${revenue.toFixed(0)}</p>
-                {productRevenue > 0 && (
+                {(productRevenue > 0 || prepaidRevenue > 0) && (
                   <p className="text-xs text-gray-400 mt-1">
-                    Services ${serviceRevenue.toFixed(0)} · Products ${productRevenue.toFixed(0)} ({productCount} sold)
+                    {[
+                      `Services $${serviceRevenue.toFixed(0)}`,
+                      productRevenue > 0 ? `Products $${productRevenue.toFixed(0)} (${productCount} sold)` : null,
+                      prepaidRevenue > 0 ? `Paid in advance $${prepaidRevenue.toFixed(0)}` : null,
+                    ].filter(Boolean).join(" · ")}
                   </p>
                 )}
               </div>
