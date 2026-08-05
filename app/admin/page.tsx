@@ -17,21 +17,18 @@ interface Appointment {
   source: string;
   paymentStatus: string | null;
   amountPaid: number | null;
-  prepaymentId: string | null;
   client: { name: string; phone: string };
   service: { name: string; price: number | null };
   staff: { name: string } | null;
 }
 
-interface Prepaid {
-  amount: number;
-  paid: boolean;
-}
-
-interface ProductSale {
-  quantity: number;
+interface Revenue {
+  services: number;
+  packages: number;
+  products: number;
+  prepaid: number;
   total: number;
-  paid: boolean;
+  counts: { services: number; packages: number; products: number; prepaid: number };
 }
 
 interface Birthday {
@@ -54,8 +51,7 @@ export default function DashboardPage() {
   const [from, setFrom] = useState(todayStr);
   const [to, setTo] = useState(todayStr);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [sales, setSales] = useState<ProductSale[]>([]);
-  const [prepaid, setPrepaid] = useState<Prepaid[]>([]);
+  const [revenue, setRevenue] = useState<Revenue | null>(null);
   const [birthdays, setBirthdays] = useState<Birthday[]>([]);
   const [greeted, setGreeted] = useState<string[]>([]);
   const [msgTemplate, setMsgTemplate] = useState(DEFAULT_BIRTHDAY_MESSAGE);
@@ -106,16 +102,11 @@ export default function DashboardPage() {
     fetch(`/api/appointments?from=${a}&to=${b}`)
       .then((r) => r.json())
       .then((d) => setAppointments(Array.isArray(d) ? d : []));
-    // Products sold count towards the day's takings too
-    fetch(`/api/product-sales?from=${a}&to=${b}`)
-      .then((r) => (r.ok ? r.json() : []))
-      .then((d) => setSales(Array.isArray(d) ? d : []))
-      .catch(() => setSales([]));
-    // …as does money taken in advance, on the day it was taken
-    fetch(`/api/prepaid?from=${a}&to=${b}`)
-      .then((r) => (r.ok ? r.json() : []))
-      .then((d) => setPrepaid(Array.isArray(d) ? d : []))
-      .catch(() => setPrepaid([]));
+    // Everything collected in the period, worked out server-side
+    fetch(`/api/revenue?from=${a}&to=${b}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setRevenue(d && typeof d.total === "number" ? d : null))
+      .catch(() => setRevenue(null));
   }, [from, to]);
 
   const isStaff = role === "STAFF";
@@ -126,18 +117,15 @@ export default function DashboardPage() {
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
   const pending = active.filter((a) => a.status === "PENDING").length;
   const completed = active.filter((a) => a.status === "COMPLETED");
-  // Money actually collected: recorded payment if present, else full price.
-  // A prepaid visit is skipped — its money was counted when it was paid for.
-  const serviceRevenue = completed.reduce(
-    (sum, a) =>
-      sum + (a.prepaymentId ? 0 : a.paymentStatus ? (a.amountPaid ?? 0) : (a.service.price || 0)),
-    0
-  );
-  const prepaidRevenue = prepaid.filter((x) => x.paid).reduce((sum, x) => sum + x.amount, 0);
-  // Unpaid product sales are owed, not earned — same rule as services
-  const productRevenue = sales.filter((s) => s.paid).reduce((sum, s) => sum + s.total, 0);
-  const productCount = sales.filter((s) => s.paid).reduce((sum, s) => sum + s.quantity, 0);
-  const revenue = serviceRevenue + productRevenue + prepaidRevenue;
+  // Where the money came from, for the line under the Revenue figure
+  const revenueParts = revenue
+    ? ([
+        ["Services", revenue.services, ""],
+        ["Packages", revenue.packages, ""],
+        ["Products", revenue.products, revenue.counts.products ? ` (${revenue.counts.products})` : ""],
+        ["Paid in advance", revenue.prepaid, ""],
+      ] as const).filter(([, amount]) => amount > 0)
+    : [];
 
   function preset(f: Date, t: Date) {
     setFrom(format(f, "yyyy-MM-dd"));
@@ -180,13 +168,9 @@ export default function DashboardPage() {
         <StatCard icon={Clock} label="Pending" value={pending} color="yellow" />
         {!isStaff && <StatCard icon={TrendingUp} label="Completed" value={completed.length} color="green" />}
         {!isStaff && (
-          <StatCard icon={DollarSign} label="Revenue" value={`$${revenue.toFixed(0)}`} color="purple"
-            note={productRevenue > 0 || prepaidRevenue > 0
-              ? [
-                  `Services $${serviceRevenue.toFixed(0)}`,
-                  productRevenue > 0 ? `Products $${productRevenue.toFixed(0)} (${productCount})` : null,
-                  prepaidRevenue > 0 ? `Prepaid $${prepaidRevenue.toFixed(0)}` : null,
-                ].filter(Boolean).join(" · ")
+          <StatCard icon={DollarSign} label="Revenue" value={`$${(revenue?.total ?? 0).toFixed(0)}`} color="purple"
+            note={revenueParts.length > 1
+              ? revenueParts.map(([label, amount, extra]) => `${label} $${amount.toFixed(0)}${extra}`).join(" · ")
               : undefined} />
         )}
       </div>
