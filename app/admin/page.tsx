@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns";
-import { Calendar, DollarSign, TrendingUp, Clock } from "lucide-react";
+import { Calendar, DollarSign, TrendingUp, Clock, X } from "lucide-react";
 import PaymentBadge from "@/components/payment-badge";
 import { birthdayLink, DEFAULT_BIRTHDAY_MESSAGE, BIRTHDAY_MESSAGE_KEY, COUNTRY_CODE_KEY } from "@/lib/messaging";
 
@@ -22,13 +22,26 @@ interface Appointment {
   staff: { name: string } | null;
 }
 
+interface RevenueItem {
+  id: string;
+  kind: "service" | "package" | "product" | "prepaid";
+  date: string;
+  clientId: string | null;
+  client: string;
+  label: string;
+  detail: string;
+  amount: number;
+}
+
 interface Revenue {
   services: number;
   packages: number;
   products: number;
   prepaid: number;
   total: number;
+  owed: number;
   counts: { services: number; packages: number; products: number; prepaid: number };
+  items: { paid: RevenueItem[]; unpaid: RevenueItem[] };
 }
 
 interface Birthday {
@@ -52,6 +65,7 @@ export default function DashboardPage() {
   const [to, setTo] = useState(todayStr);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [revenue, setRevenue] = useState<Revenue | null>(null);
+  const [showMoney, setShowMoney] = useState<"paid" | "unpaid" | null>(null);
   const [birthdays, setBirthdays] = useState<Birthday[]>([]);
   const [greeted, setGreeted] = useState<string[]>([]);
   const [msgTemplate, setMsgTemplate] = useState(DEFAULT_BIRTHDAY_MESSAGE);
@@ -168,12 +182,101 @@ export default function DashboardPage() {
         <StatCard icon={Clock} label="Pending" value={pending} color="yellow" />
         {!isStaff && <StatCard icon={TrendingUp} label="Completed" value={completed.length} color="green" />}
         {!isStaff && (
-          <StatCard icon={DollarSign} label="Revenue" value={`$${(revenue?.total ?? 0).toFixed(0)}`} color="purple"
-            note={revenueParts.length > 1
-              ? revenueParts.map(([label, amount, extra]) => `${label} $${amount.toFixed(0)}${extra}`).join(" · ")
-              : undefined} />
+          <button type="button" onClick={() => setShowMoney("paid")} className="text-left">
+            <StatCard icon={DollarSign} label="Revenue" value={`$${(revenue?.total ?? 0).toFixed(0)}`} color="purple"
+              note={revenueParts.length > 1
+                ? revenueParts.map(([label, amount, extra]) => `${label} $${amount.toFixed(0)}${extra}`).join(" · ")
+                : undefined}
+              footer={
+                <span className="text-pink-600">
+                  See details{revenue && revenue.owed > 0 ? ` · $${revenue.owed.toFixed(0)} owed` : ""} →
+                </span>
+              } />
+          </button>
         )}
       </div>
+
+      {/* Every line of money for the period, paid and still owed */}
+      {showMoney && revenue && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowMoney(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[calc(100dvh-2rem)] flex flex-col"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between p-5 border-b flex-shrink-0">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Money for {subtitle}</h2>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  ${revenue.total.toFixed(2)} collected
+                  {revenue.owed > 0 && <span className="text-amber-600"> · ${revenue.owed.toFixed(2)} still owed</span>}
+                </p>
+              </div>
+              <button onClick={() => setShowMoney(null)}><X className="w-5 h-5 text-gray-400" /></button>
+            </div>
+
+            <div className="flex gap-1 px-5 pt-3 border-b flex-shrink-0">
+              {([
+                { key: "paid", label: `Paid (${revenue.items.paid.length})` },
+                { key: "unpaid", label: `Unpaid (${revenue.items.unpaid.length})` },
+              ] as const).map((t) => (
+                <button key={t.key} onClick={() => setShowMoney(t.key)}
+                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${showMoney === t.key ? "border-pink-600 text-pink-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="overflow-y-auto flex-1 p-5">
+              {(() => {
+                const rows = showMoney === "paid" ? revenue.items.paid : revenue.items.unpaid;
+                if (rows.length === 0) {
+                  return (
+                    <p className="text-center text-gray-400 py-10 text-sm">
+                      {showMoney === "paid" ? "Nothing collected in this period" : "Nothing outstanding — all settled"}
+                    </p>
+                  );
+                }
+                const kindLabel: Record<string, string> = {
+                  service: "Service", package: "Package", product: "Product", prepaid: "Paid in advance",
+                };
+                return (
+                  <div className="space-y-2">
+                    {rows.map((r) => (
+                      <div key={`${r.kind}-${r.id}`}
+                        className={`flex items-start justify-between gap-3 border rounded-xl px-3 py-2.5 ${showMoney === "unpaid" ? "border-amber-200 bg-amber-50" : "border-gray-200"}`}>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900">
+                            {r.label}
+                            <span className="font-normal text-gray-400 text-xs ml-1.5">{kindLabel[r.kind]}</span>
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {format(new Date(r.date), "d MMM, yyyy")}
+                            {r.kind === "service" ? ` · ${format(new Date(r.date), "h:mm a")}` : ""}
+                            {" · "}
+                            {r.clientId ? (
+                              <a href={`/admin/clients/${r.clientId}`} className="text-pink-600 hover:underline">{r.client}</a>
+                            ) : r.client}
+                            {r.detail ? ` · ${r.detail}` : ""}
+                          </p>
+                        </div>
+                        <p className={`text-sm font-semibold flex-shrink-0 ${showMoney === "unpaid" ? "text-amber-700" : "text-gray-900"}`}>
+                          ${r.amount.toFixed(2)}
+                        </p>
+                      </div>
+                    ))}
+                    <div className="flex justify-end border-t border-gray-100 pt-3 text-sm">
+                      <span className="text-gray-500">
+                        Total:{" "}
+                        <span className="font-semibold text-gray-900">
+                          ${rows.reduce((s, r) => s + r.amount, 0).toFixed(2)}
+                        </span>
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Birthdays today */}
       {birthdays.length > 0 && (
@@ -284,13 +387,14 @@ export default function DashboardPage() {
 }
 
 function StatCard({
-  icon: Icon, label, value, color, note,
+  icon: Icon, label, value, color, note, footer,
 }: {
   icon: React.ElementType;
   label: string;
   value: string | number;
   color: string;
   note?: string;
+  footer?: React.ReactNode;
 }) {
   const colorMap: Record<string, string> = {
     pink: "bg-pink-50 text-pink-600",
@@ -306,6 +410,7 @@ function StatCard({
             <p className="text-sm text-gray-500">{label}</p>
             <p className="text-2xl font-bold text-gray-900 mt-1">{value}</p>
             {note && <p className="text-xs text-gray-400 mt-1">{note}</p>}
+            {footer && <p className="text-xs font-medium mt-1.5">{footer}</p>}
           </div>
           <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${colorMap[color]}`}>
             <Icon className="w-6 h-6" />
