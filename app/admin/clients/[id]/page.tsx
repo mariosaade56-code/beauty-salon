@@ -85,6 +85,9 @@ export default function ClientDetailPage() {
   const [ppSessions, setPpSessions] = useState("1");
   const [ppPaid, setPpPaid] = useState(true);
   const [ppNotes, setPpNotes] = useState("");
+  // "each" = a price per service, "bundle" = one price for the lot
+  const [ppMode, setPpMode] = useState<"each" | "bundle">("each");
+  const [ppBundle, setPpBundle] = useState("");
   const [savingPp, setSavingPp] = useState(false);
 
   async function loadPrepaid() {
@@ -95,6 +98,32 @@ export default function ClientDetailPage() {
   function resetPrepaidForm() {
     setPpPicked({}); setPpSearch(""); setPpOther(""); setPpAmount("");
     setPpSessions("1"); setPpPaid(true); setPpNotes("");
+    setPpMode("each"); setPpBundle("");
+  }
+
+  /**
+   * Shares one bundle price across the chosen services, weighted by what
+   * they'd normally cost, so the parts always add back up to the total.
+   */
+  function splitBundle(total: number): Record<string, number> {
+    const entries = Object.entries(ppPicked);
+    if (!entries.length) return {};
+    const weights = entries.map(([sid, row]) => {
+      const unit = services.find((x) => x.id === sid)?.price ?? 0;
+      return Math.max(unit, 0) * Math.max(parseInt(row.sessions) || 1, 1);
+    });
+    const sum = weights.reduce((a, b) => a + b, 0);
+    const cents = Math.round(total * 100);
+    const out: Record<string, number> = {};
+    let used = 0;
+    entries.forEach(([sid], i) => {
+      // Even split when nothing has a list price to weight by
+      const share = sum > 0 ? weights[i] / sum : 1 / entries.length;
+      const part = i === entries.length - 1 ? cents - used : Math.round(cents * share);
+      used += part;
+      out[sid] = part / 100;
+    });
+    return out;
   }
 
   function togglePpService(sv: { id: string; price: number | null }) {
@@ -121,19 +150,24 @@ export default function ClientDetailPage() {
     });
   }
 
-  const ppTotal = Object.values(ppPicked).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
-    + (Object.keys(ppPicked).length === 0 ? parseFloat(ppAmount) || 0 : 0);
+  const ppTotal =
+    Object.keys(ppPicked).length === 0
+      ? parseFloat(ppAmount) || 0
+      : ppMode === "bundle"
+      ? parseFloat(ppBundle) || 0
+      : Object.values(ppPicked).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
 
   async function addPrepaid(e: React.FormEvent) {
     e.preventDefault();
     setSavingPp(true);
     const picked = Object.entries(ppPicked);
+    const shares = ppMode === "bundle" ? splitBundle(parseFloat(ppBundle) || 0) : null;
     const payload = picked.length
       ? {
           items: picked.map(([serviceId, row]) => ({
             serviceId,
             sessionsTotal: row.sessions,
-            amount: row.amount,
+            amount: shares ? shares[serviceId] : row.amount,
           })),
           paid: ppPaid,
           notes: ppNotes,
@@ -551,6 +585,26 @@ export default function ClientDetailPage() {
                     </div>
                   </div>
 
+                  {/* How the money is being entered */}
+                  {Object.keys(ppPicked).length > 1 && (
+                    <div className="grid grid-cols-2 gap-2">
+                      {([
+                        { key: "each", title: "A price each", note: "Set what every service cost" },
+                        { key: "bundle", title: "One price for all", note: "A single figure for the lot" },
+                      ] as const).map((opt) => (
+                        <label key={opt.key}
+                          className={`flex items-start gap-2 border rounded-xl px-3 py-2 cursor-pointer transition-colors ${ppMode === opt.key ? "border-pink-600 bg-pink-50" : "border-gray-200 bg-white hover:border-gray-300"}`}>
+                          <input type="radio" name="ppmode" className="mt-0.5"
+                            checked={ppMode === opt.key} onChange={() => setPpMode(opt.key)} />
+                          <span>
+                            <span className="block text-sm font-medium text-gray-900">{opt.title}</span>
+                            <span className="block text-xs text-gray-500">{opt.note}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+
                   {/* One row per ticked service, each with its own deal */}
                   {Object.keys(ppPicked).length > 0 && (
                     <div className="space-y-2">
@@ -575,14 +629,23 @@ export default function ClientDetailPage() {
                                   className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-gray-900"
                                   value={row.sessions} onChange={(e) => setPpField(sid, "sessions", e.target.value)} />
                               </div>
-                              <div>
-                                <label className="block text-xs text-gray-500 mb-1">Paid ($)</label>
-                                <input type="number" step="0.01" min={0} required
-                                  className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-gray-900"
-                                  value={row.amount} onChange={(e) => setPpField(sid, "amount", e.target.value)} />
-                              </div>
+                              {ppMode === "each" ? (
+                                <div>
+                                  <label className="block text-xs text-gray-500 mb-1">Paid ($)</label>
+                                  <input type="number" step="0.01" min={0} required
+                                    className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm text-gray-900"
+                                    value={row.amount} onChange={(e) => setPpField(sid, "amount", e.target.value)} />
+                                </div>
+                              ) : (
+                                <div>
+                                  <label className="block text-xs text-gray-500 mb-1">Share of the total</label>
+                                  <p className="px-2 py-1.5 text-sm text-gray-500">
+                                    ${(splitBundle(parseFloat(ppBundle) || 0)[sid] ?? 0).toFixed(2)}
+                                  </p>
+                                </div>
+                              )}
                             </div>
-                            {total > 0 && normally != null && normally !== total && (
+                            {ppMode === "each" && total > 0 && normally != null && normally !== total && (
                               <p className="text-xs mt-1.5">
                                 <span className="text-gray-500">{n} \u00d7 ${(total / n).toFixed(2)} each · </span>
                                 <span className={normally > total ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
@@ -594,12 +657,36 @@ export default function ClientDetailPage() {
                           </div>
                         );
                       })}
-                      <div className="flex justify-between text-sm border-t border-gray-200 pt-2">
-                        <span className="text-gray-600">
-                          {Object.keys(ppPicked).length} service{Object.keys(ppPicked).length > 1 ? "s" : ""}
-                        </span>
-                        <span className="font-semibold text-gray-900">Total ${ppTotal.toFixed(2)}</span>
-                      </div>
+                      {ppMode === "bundle" ? (
+                        <div className="border-t border-gray-200 pt-2">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            One price for all {Object.keys(ppPicked).length} services ($) *
+                          </label>
+                          <input type="number" step="0.01" min={0} required
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900"
+                            placeholder="e.g. 150" value={ppBundle} onChange={(e) => setPpBundle(e.target.value)} />
+                          {(() => {
+                            const listed = Object.entries(ppPicked).reduce((sum, [sid, row]) => {
+                              const unit = services.find((x) => x.id === sid)?.price;
+                              return sum + (unit != null ? unit * Math.max(parseInt(row.sessions) || 1, 1) : 0);
+                            }, 0);
+                            if (!ppTotal || !listed || listed === ppTotal) return null;
+                            return (
+                              <p className={`text-xs mt-1 font-medium ${listed > ppTotal ? "text-green-600" : "text-amber-600"}`}>
+                                Normally ${listed.toFixed(2)}
+                                {listed > ppTotal ? ` — saves $${(listed - ppTotal).toFixed(2)}` : ""}
+                              </p>
+                            );
+                          })()}
+                        </div>
+                      ) : (
+                        <div className="flex justify-between text-sm border-t border-gray-200 pt-2">
+                          <span className="text-gray-600">
+                            {Object.keys(ppPicked).length} service{Object.keys(ppPicked).length > 1 ? "s" : ""}
+                          </span>
+                          <span className="font-semibold text-gray-900">Total ${ppTotal.toFixed(2)}</span>
+                        </div>
+                      )}
                     </div>
                   )}
 
