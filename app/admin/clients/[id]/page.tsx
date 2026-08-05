@@ -37,7 +37,7 @@ const VISIT_FILTERS = [
 interface Prepaid {
   id: string; amount: number; paid: boolean; notes: string | null;
   description: string | null; createdAt: string; usedAt: string | null;
-  sessionsTotal: number; sessionsUsed: number;
+  sessionsTotal: number; sessionsUsed: number; groupId: string | null;
   service: { id: string; name: string; duration: number } | null;
 }
 
@@ -89,6 +89,19 @@ export default function ClientDetailPage() {
   const [ppMode, setPpMode] = useState<"each" | "bundle">("each");
   const [ppBundle, setPpBundle] = useState("");
   const [savingPp, setSavingPp] = useState(false);
+
+  // Services bought together on one price show as a single deal
+  function groupPrepaid(rows: Prepaid[]): { key: string; rows: Prepaid[] }[] {
+    const out: { key: string; rows: Prepaid[] }[] = [];
+    const seen = new Map<string, { key: string; rows: Prepaid[] }>();
+    for (const r of rows) {
+      if (!r.groupId) { out.push({ key: r.id, rows: [r] }); continue; }
+      const g = seen.get(r.groupId);
+      if (g) g.rows.push(r);
+      else { const entry = { key: r.groupId, rows: [r] }; seen.set(r.groupId, entry); out.push(entry); }
+    }
+    return out;
+  }
 
   async function loadPrepaid() {
     const d = await fetch(`/api/clients/${id}/prepaid`).then((r) => (r.ok ? r.json() : [])).catch(() => []);
@@ -202,11 +215,21 @@ export default function ClientDetailPage() {
     loadPrepaid();
   }
 
-  async function deletePrepaid(pp: Prepaid) {
-    const what = pp.service?.name || pp.description || "this";
-    if (!confirm(`Remove the prepaid ${what}? The $${pp.amount} also comes out of their history.`)) return;
-    await fetch(`/api/prepaid/${pp.id}`, { method: "DELETE" });
+  async function deletePrepaid(rows: Prepaid[]) {
+    const what = rows.map((r) => r.service?.name || r.description).join(" + ");
+    const total = rows.reduce((s, r) => s + r.amount, 0);
+    if (!confirm(`Remove the prepaid ${what}? The $${total.toFixed(2)} also comes out of their history.`)) return;
+    await Promise.all(rows.map((r) => fetch(`/api/prepaid/${r.id}`, { method: "DELETE" })));
     loadPrepaid(); load();
+  }
+
+  async function markGroupDone(rows: Prepaid[], done: boolean) {
+    await Promise.all(rows.map((r) =>
+      fetch(`/api/prepaid/${r.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ used: done }),
+      })));
+    loadPrepaid();
   }
   const [profile, setProfile] = useState({ name: "", phone: "", email: "", dob: "", address: "", notes: "" });
   const [profileSaved, setProfileSaved] = useState(false);
@@ -735,40 +758,58 @@ export default function ClientDetailPage() {
                 <p className="text-center text-gray-400 py-4 text-sm">Nothing paid in advance</p>
               ) : (
                 <div className="space-y-2">
-                  {prepaid.filter((pp) => !pp.usedAt).map((pp) => {
-                    const left = Math.max(pp.sessionsTotal - pp.sessionsUsed, 0);
+                  {groupPrepaid(prepaid.filter((pp) => !pp.usedAt)).map(({ key, rows }) => {
+                    const total = rows.reduce((s, r) => s + r.amount, 0);
+                    const left = rows.reduce((s, r) => s + Math.max(r.sessionsTotal - r.sessionsUsed, 0), 0);
+                    const all = rows.reduce((s, r) => s + r.sessionsTotal, 0);
+                    const bundle = rows.length > 1;
                     return (
-                      <div key={pp.id} className="border border-amber-200 bg-amber-50 rounded-xl px-3 py-2.5">
+                      <div key={key} className="border border-amber-200 bg-amber-50 rounded-xl px-3 py-2.5">
                         <div className="flex items-center justify-between gap-3 flex-wrap">
                           <div className="min-w-0">
                             <p className="text-sm font-medium text-gray-900">
-                              {pp.service?.name || pp.description}
-                              {pp.sessionsTotal > 1 && (
-                                <span className="text-gray-500 font-normal"> · {pp.sessionsTotal} sessions for ${pp.amount.toFixed(2)}</span>
-                              )}
+                              {rows.map((r) => r.service?.name || r.description).join(" + ")}
+                              <span className="text-gray-500 font-normal">
+                                {" · "}{all} session{all !== 1 ? "s" : ""} for ${total.toFixed(2)}
+                              </span>
                             </p>
                             <p className="text-xs text-gray-500">
-                              {format(new Date(pp.createdAt), "d MMMM, yyyy")}
-                              {pp.notes ? ` · ${pp.notes}` : ""}
+                              {format(new Date(rows[0].createdAt), "d MMMM, yyyy")}
+                              {rows[0].notes ? ` · ${rows[0].notes}` : ""}
                             </p>
                           </div>
                           <div className="flex items-center gap-2 flex-shrink-0">
-                            <Badge variant={left > 0 ? "success" : "outline"}>
-                              {left} of {pp.sessionsTotal} left
-                            </Badge>
-                            {!pp.paid && <Badge variant="warning">unpaid</Badge>}
-                            <Button size="sm" variant="outline" onClick={() => togglePrepaidUsed(pp)}>Done</Button>
+                            <Badge variant={left > 0 ? "success" : "outline"}>{left} of {all} left</Badge>
+                            {rows.some((r) => !r.paid) && <Badge variant="warning">unpaid</Badge>}
+                            <Button size="sm" variant="outline" onClick={() => markGroupDone(rows, true)}>Done</Button>
                             {isAdmin && (
-                              <button onClick={() => deletePrepaid(pp)} className="text-gray-300 hover:text-red-500">
+                              <button onClick={() => deletePrepaid(rows)} className="text-gray-300 hover:text-red-500">
                                 <Trash2 className="w-4 h-4" />
                               </button>
                             )}
                           </div>
                         </div>
-                        {pp.sessionsTotal > 1 && (
+
+                        {/* Each treatment in the deal, so it's clear what's left of what */}
+                        {bundle && (
+                          <div className="mt-2 space-y-1 border-t border-amber-200 pt-2">
+                            {rows.map((r) => {
+                              const rLeft = Math.max(r.sessionsTotal - r.sessionsUsed, 0);
+                              return (
+                                <div key={r.id} className="flex items-center justify-between text-xs">
+                                  <span className="text-gray-700">{r.service?.name || r.description}</span>
+                                  <span className={rLeft > 0 ? "text-gray-600" : "text-gray-400 line-through"}>
+                                    {rLeft} of {r.sessionsTotal} left
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {!bundle && rows[0].sessionsTotal > 1 && (
                           <div className="w-full bg-white/70 rounded-full h-1.5 mt-2">
                             <div className="bg-amber-500 h-1.5 rounded-full transition-all"
-                              style={{ width: `${(pp.sessionsUsed / pp.sessionsTotal) * 100}%` }} />
+                              style={{ width: `${(rows[0].sessionsUsed / rows[0].sessionsTotal) * 100}%` }} />
                           </div>
                         )}
                       </div>

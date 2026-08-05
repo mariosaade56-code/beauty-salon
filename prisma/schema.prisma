@@ -129,6 +129,8 @@ model Prepayment {
   sessionsUsed  Int       @default(0)
   notes         String?
   transactionId String?
+  // Services bought together on one price share a group and read as one deal
+  groupId       String?
   appointments  Appointment[]
   createdAt     DateTime  @default(now())
   usedAt        DateTime?

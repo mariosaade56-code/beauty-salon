@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
+import { randomUUID } from "crypto";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   await requireAuth();
@@ -18,22 +19,65 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   const body = await req.json();
 
-  // Several services paid for in one go — each becomes its own entry so it
-  // can be booked and used up independently.
+  // Several services paid for in one go. They share a group so the client's
+  // file and the revenue list read them as the single deal they were.
   if (Array.isArray(body.items) && body.items.length) {
-    const created = [];
-    for (const item of body.items) {
-      const row = await createPrepayment(id, {
-        serviceId: item.serviceId || null,
-        description: item.description,
-        amount: item.amount,
-        sessionsTotal: item.sessionsTotal,
-        paid: body.paid,
-        notes: body.notes,
-      });
-      if ("error" in row) return NextResponse.json({ error: row.error }, { status: 400 });
-      created.push(row);
+    const items = body.items;
+    const services = await prisma.service.findMany({
+      where: { id: { in: items.map((i: { serviceId: string }) => i.serviceId).filter(Boolean) } },
+      select: { id: true, name: true },
+    });
+    const nameOf = new Map(services.map((s) => [s.id, s.name]));
+
+    const parsed = items.map((i: { serviceId: string; sessionsTotal?: unknown; amount?: unknown }) => ({
+      serviceId: i.serviceId,
+      name: nameOf.get(i.serviceId),
+      sessionsTotal: Math.max(Number(i.sessionsTotal) || 1, 1),
+      amount: Number(i.amount) || 0,
+    }));
+    if (parsed.some((i: { name?: string }) => !i.name)) {
+      return NextResponse.json({ error: "Service not found" }, { status: 400 });
     }
+    const total = parsed.reduce((s: number, i: { amount: number }) => s + i.amount, 0);
+    if (!(total > 0)) {
+      return NextResponse.json({ error: "Enter how much was paid" }, { status: 400 });
+    }
+
+    const paid = body.paid !== false;
+    const groupId = randomUUID();
+
+    // One line in the client's history for the whole deal
+    const label = parsed
+      .map((i: { name: string; sessionsTotal: number }) =>
+        i.sessionsTotal > 1 ? `${i.name} \u00d7 ${i.sessionsTotal}` : i.name)
+      .join(" + ");
+    const tx = await prisma.clientTransaction.create({
+      data: {
+        clientId: id,
+        description: `${label} (paid in advance)`,
+        amount: Math.round(total * 100) / 100,
+        paid,
+        reference: "Prepaid",
+      },
+    });
+
+    const created = await Promise.all(
+      parsed.map((i: { serviceId: string; sessionsTotal: number; amount: number }) =>
+        prisma.prepayment.create({
+          data: {
+            clientId: id,
+            serviceId: i.serviceId,
+            amount: i.amount,
+            paid,
+            sessionsTotal: i.sessionsTotal,
+            notes: body.notes?.trim() || null,
+            transactionId: tx.id,
+            groupId: parsed.length > 1 ? groupId : null,
+          },
+          include: { service: { select: { id: true, name: true, duration: true } } },
+        })
+      )
+    );
     return NextResponse.json(created);
   }
 

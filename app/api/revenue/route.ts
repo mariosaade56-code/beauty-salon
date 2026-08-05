@@ -60,7 +60,8 @@ export async function GET(req: NextRequest) {
     prisma.prepayment.findMany({
       where: { createdAt: { gte, lt } },
       select: {
-        id: true, amount: true, paid: true, createdAt: true, description: true, sessionsTotal: true,
+        id: true, amount: true, paid: true, createdAt: true, description: true,
+        sessionsTotal: true, groupId: true,
         service: { select: { name: true } },
         client: { select: { id: true, name: true } },
       },
@@ -136,15 +137,28 @@ export async function GET(req: NextRequest) {
     (x.paid ? paidItems : unpaidItems).push(item);
   }
 
+  // Services bought together on one price are shown as the single deal they were
+  const prepaidGroups = new Map<string, typeof prepayments>();
   for (const x of prepayments) {
+    const key = x.groupId ?? `solo:${x.id}`;
+    const list = prepaidGroups.get(key);
+    if (list) list.push(x);
+    else prepaidGroups.set(key, [x]);
+  }
+  for (const [key, rows] of prepaidGroups) {
+    const first = rows[0];
+    const sessions = rows.reduce((s, r) => s + r.sessionsTotal, 0);
     const item = {
-      id: x.id, kind: "prepaid" as const, date: x.createdAt,
-      clientId: x.client?.id ?? null, client: x.client?.name ?? "—",
-      label: x.service?.name ?? x.description ?? "Paid in advance",
-      detail: x.sessionsTotal > 1 ? `${x.sessionsTotal} sessions · paid in advance` : "paid in advance",
-      amount: x.amount,
+      id: key,
+      kind: "prepaid" as const,
+      date: first.createdAt,
+      clientId: first.client?.id ?? null,
+      client: first.client?.name ?? "—",
+      label: rows.map((r) => r.service?.name ?? r.description ?? "Paid in advance").join(" + "),
+      detail: sessions > 1 ? `${sessions} sessions · paid in advance` : "paid in advance",
+      amount: Math.round(rows.reduce((s, r) => s + r.amount, 0) * 100) / 100,
     };
-    (x.paid ? paidItems : unpaidItems).push(item);
+    (first.paid ? paidItems : unpaidItems).push(item);
   }
 
   const packages = packageSales.filter((x) => x.paid).reduce((s, x) => s + x.amount, 0);
