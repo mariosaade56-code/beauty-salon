@@ -40,6 +40,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const { clientName, phone, email, staffId, startTime, notes, source, packageId, serviceIds, prepaymentId } = body;
+  // serviceId -> prepaid credit to draw on, for multi-service bookings
+  const prepaidFor: Record<string, string> = body.prepaidFor || {};
   let { serviceId } = body;
 
   // Multi-service booking: create consecutive appointments with the same staff
@@ -55,11 +57,30 @@ export async function POST(req: NextRequest) {
       client = await prisma.client.create({ data: { name: clientName, phone, email } });
     }
 
+    // Check every prepaid credit up front so a half-booked run can't happen
+    const creditIds = serviceIds.map((id: string) => prepaidFor[id]).filter(Boolean);
+    const creditById = new Map<string, { id: string; sessionsTotal: number; sessionsUsed: number }>();
+    if (creditIds.length) {
+      const rows = await prisma.prepayment.findMany({
+        where: { id: { in: creditIds }, clientId: client.id },
+        select: { id: true, sessionsTotal: true, sessionsUsed: true },
+      });
+      for (const r of rows) creditById.set(r.id, r);
+      for (const cid of creditIds) {
+        const r = creditById.get(cid);
+        if (!r) return NextResponse.json({ error: "Prepaid credit not found for this client" }, { status: 400 });
+        if (r.sessionsUsed >= r.sessionsTotal) {
+          return NextResponse.json({ error: "No sessions left on that prepaid credit" }, { status: 400 });
+        }
+      }
+    }
+
     const created = [];
     let cursor = parseSalonTime(startTime);
     for (const id of serviceIds) {
       const svc = byId[id];
       const end = new Date(cursor.getTime() + svc.duration * 60000);
+      const creditId = prepaidFor[id] || null;
       created.push(
         await prisma.appointment.create({
           data: {
@@ -71,10 +92,20 @@ export async function POST(req: NextRequest) {
             status: "CONFIRMED",
             source: source || "WEBSITE",
             notes,
+            prepaymentId: creditId,
           },
           include: { client: true, service: true, staff: true },
         })
       );
+      if (creditId) {
+        const used = await prisma.prepayment.update({
+          where: { id: creditId },
+          data: { sessionsUsed: { increment: 1 } },
+        });
+        if (used.sessionsUsed >= used.sessionsTotal) {
+          await prisma.prepayment.update({ where: { id: creditId }, data: { usedAt: new Date() } });
+        }
+      }
       cursor = end;
     }
 

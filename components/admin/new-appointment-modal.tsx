@@ -51,7 +51,7 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
   const [todos, setTodos] = useState<{ id: string; description: string; fromService: string | null; createdAt: string }[]>([]);
   // One-off deals already paid for on this client's file
   const [credits, setCredits] = useState<{ id: string; amount: number; sessionsTotal: number; sessionsUsed: number; description: string | null; service: { id: string; name: string } | null }[]>([]);
-  const [useCreditId, setUseCreditId] = useState("");
+  const [useCreditIds, setUseCreditIds] = useState<string[]>([]);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function searchClients(query: string, field: "name" | "phone") {
@@ -79,7 +79,7 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
   useEffect(() => {
     setTodos([]);
     setCredits([]);
-    setUseCreditId("");
+    setUseCreditIds([]);
     if (!linkedClient) return;
     fetch(`/api/clients/${linkedClient.id}/pending`)
       .then((r) => (r.ok ? r.json() : []))
@@ -116,12 +116,13 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
   function toggleService(id: string) {
     setSelectedServices((prev) => {
       const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
-      // A prepaid session pays for one service — changing the picks drops it
-      setUseCreditId((cur) => {
-        if (!cur) return cur;
-        const c = credits.find((x) => x.id === cur);
-        return c && next.length === 1 && c.service?.id === next[0] ? cur : "";
-      });
+      // Unpicking a service releases whatever credit was paying for it
+      setUseCreditIds((cur) =>
+        cur.filter((cid) => {
+          const c = credits.find((x) => x.id === cid);
+          return c?.service ? next.includes(c.service.id) : true;
+        })
+      );
       return next;
     });
     setPackageId("");
@@ -132,16 +133,26 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
   // soon as they're recognised, so nobody charges them twice by accident.
   const usableCredits = packageId ? [] : credits;
 
-  // Ticking one books that service against the credit. A prepaid session
-  // covers a single visit, so it replaces whatever else was selected.
+  // Ticking a credit adds its service to the booking and draws a session
+  // from it. Several can be used at once — they're booked back to back.
   function useCredit(c: { id: string; service: { id: string; name: string } | null }) {
-    if (useCreditId === c.id) {
-      setUseCreditId("");
-      return;
+    const on = useCreditIds.includes(c.id);
+    setUseCreditIds((prev) => (on ? prev.filter((x) => x !== c.id) : [...prev, c.id]));
+    if (c.service) {
+      const sid = c.service.id;
+      setSelectedServices((prev) =>
+        on ? prev.filter((x) => x !== sid) : prev.includes(sid) ? prev : [...prev, sid]
+      );
     }
-    setUseCreditId(c.id);
-    if (c.service) setSelectedServices([c.service.id]);
+    setPackageId("");
     setForm((f) => ({ ...f, time: "" }));
+  }
+
+  // Which credit is paying for each service in this booking
+  const prepaidFor: Record<string, string> = {};
+  for (const id of useCreditIds) {
+    const c = credits.find((x) => x.id === id);
+    if (c?.service) prepaidFor[c.service.id] = c.id;
   }
 
   useEffect(() => {
@@ -237,7 +248,9 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
             : {
                 ...base,
                 serviceIds: selectedServices,
-                prepaymentId: usableCredits.some((c) => c.id === useCreditId) ? useCreditId : undefined,
+                // one credit per service; the single-service path uses prepaymentId
+                prepaidFor,
+                prepaymentId: selectedServices.length === 1 ? prepaidFor[selectedServices[0]] : undefined,
               }
         ),
       });
@@ -338,7 +351,7 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
               </p>
               {usableCredits.map((c) => {
                 const left = c.sessionsTotal - c.sessionsUsed;
-                const on = useCreditId === c.id;
+                const on = useCreditIds.includes(c.id);
                 return (
                   <label key={c.id}
                     className={`flex items-start gap-2.5 rounded-lg px-3 py-2 cursor-pointer bg-white border transition-colors ${on ? "border-amber-500" : "border-amber-200"}`}>
@@ -357,7 +370,7 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate, i
                 );
               })}
               <p className="text-xs text-amber-800">
-                Tick one and it fills in the service below — the visit is free at the till.
+                Tick any of them — the services fill in below and those visits are free at the till.
               </p>
             </div>
           )}
