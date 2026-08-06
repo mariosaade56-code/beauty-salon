@@ -47,10 +47,10 @@ function visitBucket(v: Visit): string {
   return KNOWN_BUCKETS.includes(cat) ? cat : "other";
 }
 
-// A booking only becomes a session once someone says what happened.
-// Anything still ahead of that is just an upcoming appointment.
-const RESOLVED = ["COMPLETED", "NO_SHOW", "CANCELLED"];
-const isResolved = (v: Visit) => RESOLVED.includes(v.status);
+// Only a treatment actually given counts as a session. No-shows and
+// cancellations are history worth keeping, but nothing was done.
+const isDone = (v: Visit) => v.status === "COMPLETED";
+const isUpcoming = (v: Visit) => v.status === "PENDING" || v.status === "CONFIRMED";
 
 const STATUS_FILTERS = [
   { key: "all", label: "All" },
@@ -319,20 +319,19 @@ export default function ClientDetailPage() {
     setTransactions(Array.isArray(txs) ? txs : []);
   }
 
-  // Sessions are the resolved visits; upcoming bookings sit behind their own chip
-  const sessions = visits.filter(isResolved);
-  const upcoming = visits.filter((v) => !isResolved(v));
+  // The headline count is treatments actually given
+  const sessions = visits.filter(isDone);
   const statusPool =
-    statusFilter === "all" ? sessions
-      : statusFilter === "upcoming" ? upcoming
-      : sessions.filter((v) => v.status === statusFilter);
+    statusFilter === "all" ? visits
+      : statusFilter === "upcoming" ? visits.filter(isUpcoming)
+      : visits.filter((v) => v.status === statusFilter);
   const filteredVisits =
     visitFilter === "all" ? statusPool : statusPool.filter((v) => visitBucket(v) === visitFilter);
 
   function statusCount(key: string) {
-    if (key === "all") return sessions.length;
-    if (key === "upcoming") return upcoming.length;
-    return sessions.filter((v) => v.status === key).length;
+    if (key === "all") return visits.length;
+    if (key === "upcoming") return visits.filter(isUpcoming).length;
+    return visits.filter((v) => v.status === key).length;
   }
 
   async function saveProfile(e: React.FormEvent) {
@@ -963,7 +962,9 @@ export default function ClientDetailPage() {
           {filteredVisits.length > 0 && (
             <div className="grid grid-cols-3 gap-3">
               <Card><CardContent className="p-4">
-                <p className="text-xs text-gray-500">{statusFilter === "upcoming" ? "Booked" : "Sessions"}</p>
+                <p className="text-xs text-gray-500">
+                  {statusFilter === "upcoming" ? "Booked" : statusFilter === "all" ? "Bookings" : "Showing"}
+                </p>
                 <p className="text-xl font-bold text-gray-900">{filteredVisits.length}</p>
               </CardContent></Card>
               <Card><CardContent className="p-4">
@@ -982,11 +983,9 @@ export default function ClientDetailPage() {
           {filteredVisits.length === 0 ? (
             <Card><CardContent className="py-10 text-center text-gray-400 text-sm">
               {visits.length === 0
-                ? "No sessions yet"
+                ? "No bookings yet"
                 : statusFilter === "upcoming"
                 ? "Nothing booked ahead"
-                : sessions.length === 0
-                ? `Nothing counted yet — ${upcoming.length} booking${upcoming.length === 1 ? "" : "s"} still to happen`
                 : "Nothing matches these filters"}
             </CardContent></Card>
           ) : (
