@@ -94,7 +94,7 @@ export default function ServicesPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Duration (minutes) *</label>
-                <Input type="number" required value={form.duration} onChange={(e) => setForm({ ...form, duration: parseInt(e.target.value) })} min={15} step={15} />
+                <Input type="number" required value={form.duration} onChange={(e) => setForm({ ...form, duration: parseInt(e.target.value) })} min={5} step={5} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Price ($)</label>
