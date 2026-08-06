@@ -22,7 +22,9 @@ export async function GET(req: NextRequest) {
         take: 1,
         include: { service: true },
       },
-      _count: { select: { appointments: true } },
+      // Visits means treatments actually given — a booking still to happen,
+      // a no-show or a cancellation isn't one.
+      _count: { select: { appointments: { where: { status: "COMPLETED" } } } },
     },
     orderBy: { createdAt: "desc" },
   });
