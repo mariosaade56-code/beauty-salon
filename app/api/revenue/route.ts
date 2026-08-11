@@ -41,11 +41,16 @@ export async function GET(req: NextRequest) {
       },
       orderBy: { startTime: "asc" },
     }),
-    // Package sales are logged to the client's file when sold. The unpaid
-    // "balance due" row rides along so it can be listed as still owed.
+    // Package sales, plus anything typed straight into a client's
+    // transaction history. The mirror rows written for appointments,
+    // products and prepayments are skipped — those are counted from their
+    // own records, and counting both would double them.
     prisma.clientTransaction.findMany({
-      where: { reference: "Package", date: { gte, lt } },
-      select: { id: true, amount: true, paid: true, date: true, description: true, client: { select: { id: true, name: true } } },
+      where: {
+        date: { gte, lt },
+        NOT: { reference: { in: ["Appointment", "Product", "Prepaid"] } },
+      },
+      select: { id: true, amount: true, paid: true, date: true, description: true, reference: true, client: { select: { id: true, name: true } } },
       orderBy: { date: "asc" },
     }),
     prisma.productSale.findMany({
@@ -71,7 +76,7 @@ export async function GET(req: NextRequest) {
 
   type Item = {
     id: string;
-    kind: "service" | "package" | "product" | "prepaid";
+    kind: "service" | "package" | "product" | "prepaid" | "other";
     date: Date;
     clientId: string | null;
     client: string;
@@ -119,10 +124,16 @@ export async function GET(req: NextRequest) {
   }
 
   for (const x of packageSales) {
+    const isPackage = x.reference === "Package";
     const item = {
-      id: x.id, kind: "package" as const, date: x.date,
-      clientId: x.client?.id ?? null, client: x.client?.name ?? "—",
-      label: x.description, detail: "package", amount: x.amount,
+      id: x.id,
+      kind: (isPackage ? "package" : "other") as "package" | "other",
+      date: x.date,
+      clientId: x.client?.id ?? null,
+      client: x.client?.name ?? "—",
+      label: x.description,
+      detail: isPackage ? "package" : x.reference || "added by hand",
+      amount: x.amount,
     };
     (x.paid ? paidItems : unpaidItems).push(item);
   }
@@ -161,7 +172,13 @@ export async function GET(req: NextRequest) {
     (first.paid ? paidItems : unpaidItems).push(item);
   }
 
-  const packages = packageSales.filter((x) => x.paid).reduce((s, x) => s + x.amount, 0);
+  const packages = packageSales
+    .filter((x) => x.paid && x.reference === "Package")
+    .reduce((s, x) => s + x.amount, 0);
+  // Money entered straight onto a client's file
+  const other = packageSales
+    .filter((x) => x.paid && x.reference !== "Package")
+    .reduce((s, x) => s + x.amount, 0);
   const products = productSales.filter((x) => x.paid).reduce((s, x) => s + x.total, 0);
   const prepaid = prepayments.filter((x) => x.paid).reduce((s, x) => s + x.amount, 0);
 
@@ -174,10 +191,11 @@ export async function GET(req: NextRequest) {
     packages,
     products,
     prepaid,
-    total: Math.round((services + packages + products + prepaid) * 100) / 100,
+    other,
+    total: Math.round((services + packages + products + prepaid + other) * 100) / 100,
     counts: {
       services: servicesCount,
-      packages: packageSales.filter((x) => x.paid).length,
+      packages: packageSales.filter((x) => x.paid && x.reference === "Package").length,
       products: productSales.filter((x) => x.paid).reduce((s, x) => s + x.quantity, 0),
       prepaid: prepayments.filter((x) => x.paid).length,
     },

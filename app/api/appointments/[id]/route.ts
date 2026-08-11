@@ -226,8 +226,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       status === "PAID" ? price : status === "PARTIAL" ? Math.min(appointment.amountPaid ?? 0, price) : 0;
     const balance = price - paidAmount;
 
-    if (paidAmount > 0) {
-      const label = discounted
+    // A $0 visit still gets a line, so a comped or fully discounted
+    // treatment is visible in the client's record rather than silently absent
+    if (paidAmount > 0 || price === 0) {
+      const label = price === 0
+        ? `${appointment.service.name} (free${appointment.service.price ? ` — normally $${appointment.service.price}` : ""})`
+        : discounted
         ? `${appointment.service.name} (discounted from $${appointment.service.price})`
         : appointment.service.name;
       await prisma.clientTransaction.create({

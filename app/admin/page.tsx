@@ -24,7 +24,7 @@ interface Appointment {
 
 interface RevenueItem {
   id: string;
-  kind: "service" | "package" | "product" | "prepaid";
+  kind: "service" | "package" | "product" | "prepaid" | "other";
   date: string;
   clientId: string | null;
   client: string;
@@ -38,6 +38,7 @@ interface Revenue {
   packages: number;
   products: number;
   prepaid: number;
+  other: number;
   total: number;
   owed: number;
   counts: { services: number; packages: number; products: number; prepaid: number };
@@ -138,6 +139,7 @@ export default function DashboardPage() {
         ["Packages", revenue.packages, ""],
         ["Products", revenue.products, revenue.counts.products ? ` (${revenue.counts.products})` : ""],
         ["Paid in advance", revenue.prepaid, ""],
+        ["Other", revenue.other, ""],
       ] as const).filter(([, amount]) => amount > 0)
     : [];
 
@@ -235,7 +237,7 @@ export default function DashboardPage() {
                   );
                 }
                 const kindLabel: Record<string, string> = {
-                  service: "Service", package: "Package", product: "Product", prepaid: "Paid in advance",
+                  service: "Service", package: "Package", product: "Product", prepaid: "Paid in advance", other: "Other",
                 };
                 return (
                   <div className="space-y-2">

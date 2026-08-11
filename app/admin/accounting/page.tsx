@@ -19,6 +19,7 @@ interface Revenue {
   packages: number;
   products: number;
   prepaid: number;
+  other: number;
   total: number;
   counts: { services: number; packages: number; products: number; prepaid: number };
 }
@@ -128,6 +129,7 @@ export default function AccountingPage() {
                       ["Packages", breakdown.packages, ""],
                       ["Products", breakdown.products, breakdown.counts.products ? ` (${breakdown.counts.products} sold)` : ""],
                       ["Paid in advance", breakdown.prepaid, ""],
+                      ["Other", breakdown.other, ""],
                     ] as const)
                       .filter(([, amount]) => amount > 0)
                       .map(([label, amount, extra]) => `${label} $${amount.toFixed(0)}${extra}`)
