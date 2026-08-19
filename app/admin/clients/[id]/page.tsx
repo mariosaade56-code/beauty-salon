@@ -319,14 +319,29 @@ export default function ClientDetailPage() {
     setTransactions(Array.isArray(txs) ? txs : []);
   }
 
-  // The headline count is treatments actually given
-  const sessions = visits.filter(isDone);
+  // A visit is a day they came in — several treatments that day are one
+  // visit, not several
+  const dayKey = (v: Visit) => v.startTime.slice(0, 10);
+  const doneVisits = visits.filter(isDone);
+  const sessions = Array.from(new Set(doneVisits.map(dayKey)));
   const statusPool =
     statusFilter === "all" ? visits
       : statusFilter === "upcoming" ? visits.filter(isUpcoming)
       : visits.filter((v) => v.status === statusFilter);
   const filteredVisits =
     visitFilter === "all" ? statusPool : statusPool.filter((v) => visitBucket(v) === visitFilter);
+
+  // Same client, same day — shown as one visit listing everything done
+  function groupByDay(rows: Visit[]): { key: string; rows: Visit[] }[] {
+    const map = new Map<string, Visit[]>();
+    for (const v of rows) {
+      const k = dayKey(v);
+      const list = map.get(k);
+      if (list) list.push(v);
+      else map.set(k, [v]);
+    }
+    return Array.from(map, ([key, rows]) => ({ key, rows }));
+  }
 
   function statusCount(key: string) {
     if (key === "all") return visits.length;
@@ -516,7 +531,7 @@ export default function ClientDetailPage() {
           <button key={t}
             onClick={() => setTab(t)}
             className={`px-4 py-2 text-sm font-medium capitalize border-b-2 transition-colors whitespace-nowrap ${tab === t ? "border-pink-600 text-pink-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
-            {t === "record" ? "📋 Record" : t === "visits" ? `💉 Sessions (${sessions.length})` : t === "packages" ? "📦 Packages" : "📸 Photos"}
+            {t === "record" ? "📋 Record" : t === "visits" ? `💉 Visits (${sessions.length})` : t === "packages" ? "📦 Packages" : "📸 Photos"}
           </button>
         ))}
       </div>
@@ -990,36 +1005,58 @@ export default function ClientDetailPage() {
             </CardContent></Card>
           ) : (
             <div className="space-y-2">
-              {filteredVisits.map((v) => (
-                <div key={v.id} className="bg-white border border-gray-200 rounded-xl px-4 py-3">
-                  <div className="flex items-start justify-between gap-3 flex-wrap">
-                    <div className="min-w-0">
-                      <p className="font-medium text-gray-900">{v.service.name}</p>
-                      <p className="text-sm text-gray-500">
-                        {format(new Date(v.startTime), "d MMMM, yyyy")} · {format(new Date(v.startTime), "h:mm a")}
-                        {v.staff ? ` · ${v.staff.name}` : ""}
-                      </p>
-                      {v.notes && <p className="text-xs text-gray-400 mt-0.5">{v.notes}</p>}
+              {groupByDay(filteredVisits).map(({ key, rows }) => {
+                const paid = rows.reduce((s, v) => s + (v.amountPaid || 0), 0);
+                return (
+                  <div key={key} className="bg-white border border-gray-200 rounded-xl px-4 py-3">
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div className="min-w-0">
+                        <p className="font-medium text-gray-900">
+                          {format(new Date(rows[0].startTime), "d MMMM, yyyy")}
+                          {rows.length > 1 && (
+                            <span className="font-normal text-gray-500"> · {rows.length} treatments</span>
+                          )}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          {format(new Date(rows[0].startTime), "h:mm a")}
+                          {rows[0].staff ? ` · ${rows[0].staff.name}` : ""}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {paid > 0 && <Badge variant="success">${paid.toFixed(2)}</Badge>}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {v.clientPackageId ? (
-                        <Badge variant="default">Package</Badge>
-                      ) : v.amountPaid != null ? (
-                        <Badge variant={v.paymentStatus === "PAID" ? "success" : "warning"}>
-                          ${v.amountPaid.toFixed(2)}
-                        </Badge>
-                      ) : null}
-                      <Badge variant={
-                        v.status === "COMPLETED" ? "success"
-                          : v.status === "NO_SHOW" || v.status === "CANCELLED" ? "destructive"
-                          : "outline"
-                      }>
-                        {v.status === "NO_SHOW" ? "No-show" : v.status.charAt(0) + v.status.slice(1).toLowerCase()}
-                      </Badge>
+
+                    {/* Everything done that day */}
+                    <div className="mt-2 space-y-1.5 border-t border-gray-100 pt-2">
+                      {rows.map((v) => (
+                        <div key={v.id} className="flex items-center justify-between gap-2 flex-wrap">
+                          <div className="min-w-0">
+                            <span className="text-sm text-gray-800">{v.service.name}</span>
+                            {v.notes && <span className="text-xs text-gray-400 ml-1.5">{v.notes}</span>}
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            {v.clientPackageId ? (
+                              <Badge variant="default">Package</Badge>
+                            ) : v.amountPaid != null ? (
+                              <Badge variant={v.paymentStatus === "PAID" ? "success" : "warning"}>
+                                ${v.amountPaid.toFixed(2)}
+                              </Badge>
+                            ) : null}
+                            <Badge variant={
+                              v.status === "COMPLETED" ? "success"
+                                : v.status === "NO_SHOW" || v.status === "CANCELLED" ? "destructive"
+                                : "outline"
+                            }>
+                              {v.status === "NO_SHOW" ? "No-show" : v.status.charAt(0) + v.status.slice(1).toLowerCase()}
+                            </Badge>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

@@ -219,6 +219,19 @@ export default function AppointmentsPage() {
     }
   }
 
+  // Admin-only actions hinge on this, so a dropped request can't be the
+  // reason Delete never appears
+  async function loadRole(attempt = 0) {
+    try {
+      const res = await fetch("/api/auth/me");
+      if (!res.ok) throw new Error("role fetch failed");
+      const u = await res.json();
+      if (u?.role) setRole(u.role);
+    } catch {
+      if (attempt < 3) setTimeout(() => loadRole(attempt + 1), 1000 * (attempt + 1));
+    }
+  }
+
   // Staff drives the calendar columns — retry briefly so a hiccup doesn't
   // leave the day view without its technician columns
   async function loadStaff(attempt = 0) {
@@ -238,7 +251,7 @@ export default function AppointmentsPage() {
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 60000);
     loadStaff();
-    fetch("/api/auth/me").then((r) => r.json()).then((u) => { if (u?.role) setRole(u.role); }).catch(() => {});
+    loadRole();
     fetch("/api/daysoff").then((r) => (r.ok ? r.json() : [])).then((d) => setDaysOff(Array.isArray(d) ? d : [])).catch(() => {});
     fetch("/api/settings").then((r) => r.json()).then((s) => setDiscount(discountPercent(s))).catch(() => {});
     return () => clearInterval(t);
